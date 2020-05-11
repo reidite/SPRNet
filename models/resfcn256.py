@@ -96,6 +96,7 @@ class ResFCN256(nn.Module):
 		se = self.blick9(se)
 		se = self.block10(se)
 		
+
 		pd = self.upsample0(se)
 		pd = self.upsample1(pd)
 		pd = self.upsample2(pd)

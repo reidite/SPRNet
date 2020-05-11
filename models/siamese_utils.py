@@ -9,8 +9,8 @@ import torch.utils.data as data
 
 from pathlib import Path
 from PIL import Image
-from models.io_utils import  _numpy_to_tensor, _load_cpu, _load_gpu
-from models.params import *
+from io_utils import  _numpy_to_tensor, _load_cpu, _load_gpu
+from params import *
 from collections import defaultdict
 
 def reconstruct_vertex(param, whitening=True, dense=True):
