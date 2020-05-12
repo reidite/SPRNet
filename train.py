@@ -14,13 +14,12 @@ from pathlib import Path
 from torch.utils.data import DataLoader
 from data.WLP300dataset import SiaTrainDataset, ToTensor, ToNormalize
 # from io_utils import mkdir
-from models.sia_loss import WeightMaskLoss
+from models.sia_loss import UVLoss0, WeightMaskLoss
 from models.resfcn256 import ResFCN256
 
 #global configuration
 lr = None
 #arch
-start_epoch = 1
 param_fp_train='./train.configs/param_all_norm.pkl'     
 param_fp_val='./train.configs/param_all_norm_val.pkl' 
 warmup = 5
@@ -35,9 +34,6 @@ milestones = 30, 40
 print_freq = 50
 devices_id = [0]
 workers = 8
-filelists_train = "./label_train_aug_120x120.list.train"
-filelists_val = "./label_train_aug_120x120.list.val"
-root = "/home/luoyao/Project_3d/3D_face_solution/3DDFA_TPAMI/3DDFA_PAMI/train_aug_120x120" 
 log_file = "./training_debug/logs/TEST_Git/"
 #loss
 snapshot = "./training_debug/logs/TEST_Git/"
@@ -124,7 +120,7 @@ FLAGS = {
 	"milestones" : 30
 }
 FLAGS = {   
-			"start_epoch": 0,
+			"start_epoch": 1,
 			"target_epoch": 500,
 			"device": "cuda",
 			"mask_path": "./utils/uv_data/uv_weight_mask_gdh.png",
@@ -139,6 +135,30 @@ FLAGS = {
 			"summary_step": 0,
 			"resume": True
 		}
+
+def train(train_loader, model, criterion, optimizer, epoch):
+	model.train()
+	for i, (img_l, img_r, label, target_l, target_r) in enumerate(train_loader):
+		target_l.requires_grad = False
+		target_r.requires_grad = False
+
+		label.requires_grad = False
+		label = label.cuda(non_blocking = True)
+
+		target_l = target_l.cuda(non_blocking=True)
+		target_r = target_r.cuda(non_blocking=True)
+
+		feature_l, feature_r, output_l, output_r = model(img_l, img_r)
+
+		loss = criterion(output_l, output_r, label, target_l, target_r)
+		optimizer.zero_grad()
+		loss.backward()
+		optimizer.step()
+
+		if i % epochs == 0:
+			print('[Step:%d | Epoch:%d], lr:%.6f, loss:%.6f' % (i, epoch, lr, loss.data.cpu().numpy()))
+			print('[Step:%d | Epoch:%d], lr:%.6f, loss:%.6f' % (i, epoch, lr, loss.data.cpu().numpy()), file=open(log_file + 'contrastive_print.txt','a'))
+
 def main(root_dir):
 	###		Step1: Define the model structure
 	model 	= load_SPRNET()
@@ -146,7 +166,7 @@ def main(root_dir):
 	model	= nn.DataParallel(model, device_ids=devices_id).cuda()
 
 	###		Step2: Loss and optimization method
-	criterion = WeightMaskLoss(mask_path=FLAGS["mask_path"]).cuda()
+	criterion = WeightMaskLoss(mask_path=FLAGS["mask_path"])
 	optimizer = torch.optim.SGD(model.parameters(),
 								lr = base_lr,
 								momentum = momentum,
@@ -154,25 +174,23 @@ def main(root_dir):
 								nesterov = True)
 
 	#		Step3: Data
-	train_dataset, val_dataset = SiaTrainDataset(
+	train_dataset = SiaTrainDataset(
 		root_dir  = root_dir,
 		transform = transforms.Compose([ToTensor(), ToNormalize(FLAGS["normalize_mean"], FLAGS["normalize_std"])])
 	)
 
 	transform_img = transforms.Compose([
 		transforms.ToTensor(),
-		transforms.Normalize(FLAGS["normalize_mean"], FLAGS["normalize_std"])
+		transforms.Normalize(dir, FLAGS["normalize_std"])
 	])
 
 	train_loader = DataLoader(train_dataset, batch_size = batch_size, num_workers=workers,
 								shuffle=False, pin_memory=True, drop_last=True)
 
-	val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=workers,
-                            shuffle=False, pin_memory=True)
 
 	cudnn.benchmark = True
 
-	for epoch in range(start_epoch, epochs+1):
+	for epoch in range(FLAGS["start_epoch"], FLAGS["target_epoch"]):
 		#adjust learning rate
 		adjust_lr_exp(optimizer, base_lr, epoch, epochs, 30)
 		#train for one epoch

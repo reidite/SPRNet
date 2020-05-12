@@ -19,7 +19,7 @@ def create_label_dict(path):
 	folder_num = 0
 	for folder in glob.glob(os.path.join(path, "data", "origin", "*")):
 		folder_list += [folder]
-	folder_list.sort()
+	folder_list.sort(key = lambda x: (int(os.path.basename(os.path.normpath(x))), x))
 	for folder in folder_list:
 		identity_list = []
 		folder_num += 1
@@ -36,35 +36,39 @@ class SiaTrainDataset(data.Dataset):
 		self.label_dict, self.numb_label = create_label_dict(root_dir)
 
 	def __getitem__(self, index):
-		label_1 = random.choice(range(len(self.num_label)))
+		label_1 = random.choice(range(self.numb_label))
+		label_2 = -1
+		if label_1 == 1991:
+			i = 0
 		img1_name = self.label_dict[label_1][random.choice(range(len(self.label_dict[label_1])))]
 		
 		is_same = np.random.choice([0, 1], p=[0.6, 0.4])
 
 		if is_same:
-			img2_name = self.label_dict[label_1][random.choice(range(len(self.label_dict[label_1])))]
+			label_2 = label_1
+			img2_name = self.label_dict[label_2][random.choice(range(len(self.label_dict[label_2])))]
 		else:
 			while True:
-				label_2 = random.choice(range(len(self.num_label)))
+				label_2 = random.choice(range(self.numb_label))
 				if label_2 != label_1:
 					break
 			img2_name = self.label_dict[label_2][random.choice(range(len(self.label_dict[label_2])))]
 		
 		is_flip = np.random.choice([0, 1], p=[0.6, 0.4])
 		if is_flip:
-			img1_path 		= osp.join(self.root_dir, "data", "flip", label_1, img1_name + ".jpg")
-			target1_path 	= osp.join(self.root_dir, "data", "flip", label_1, img1_name + ".npy")
+			img1_path 		= osp.join(self.root_dir, "data", "flip", str(label_1), img1_name + ".jpg")
+			target1_path 	= osp.join(self.root_dir, "data", "flip", str(label_1), img1_name + ".npy")
 		else:
-			img1_path 		= osp.join(self.root_dir, "data", "origin", label_1, img1_name + ".jpg")
-			target1_path 	= osp.join(self.root_dir, "data", "origin", label_1, img1_name + ".npy")
+			img1_path 		= osp.join(self.root_dir, "data", "origin", str(label_1), img1_name + ".jpg")
+			target1_path 	= osp.join(self.root_dir, "data", "origin", str(label_1), img1_name + ".npy")
 
 		is_flip = np.random.choice([0, 1], p=[0.6, 0.4])
 		if is_flip:
-			img2_path 		= osp.join(self.root_dir, "data", "flip", label_2, img2_name + ".jpg")
-			target2_path 	= osp.join(self.root_dir, "data", "flip", label_2, img2_name + ".npy")
+			img2_path 		= osp.join(self.root_dir, "data", "flip", str(label_2), img2_name + ".jpg")
+			target2_path 	= osp.join(self.root_dir, "data", "flip", str(label_2), img2_name + ".npy")
 		else:
-			img2_path 		= osp.join(self.root_dir, "data", "origin", label_2, img2_name + ".jpg")
-			target2_path 	= osp.join(self.root_dir, "data", "origin", label_2, img2_name + ".npy")
+			img2_path 		= osp.join(self.root_dir, "data", "origin", str(label_2), img2_name + ".jpg")
+			target2_path 	= osp.join(self.root_dir, "data", "origin", str(label_2), img2_name + ".npy")
 		
 		img1 = cv2.imread(img1_path)
 		img2 = cv2.imread(img2_path)
@@ -74,8 +78,8 @@ class SiaTrainDataset(data.Dataset):
 	
 	def __len__(self):
 		train_length = 0
-		for i in self.numb_label:
-			train_length += len(self.label_dict)
+		for i in range(self.numb_label):
+			train_length += len(self.label_dict[i])
 		return train_length
 
 class ToTensor(object):
