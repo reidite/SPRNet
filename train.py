@@ -17,24 +17,8 @@ from data.WLP300dataset import SiaTrainDataset, ToTensor, ToNormalize
 from models.sia_loss import UVLoss0, WeightMaskLoss
 from models.resfcn256 import ResFCN256
 
-#global configuration
-lr = None
-#arch
-param_fp_train='./train.configs/param_all_norm.pkl'     
-param_fp_val='./train.configs/param_all_norm_val.pkl' 
-warmup = 5
-#opt_style 
-batch_size = 32
-base_lr = 0.001
-lr = base_lr
-momentum = 0.9
-weight_decay = 5e-4
-epochs = 50
-milestones = 30, 40
-print_freq = 50
-devices_id = [0]
-workers = 8
-log_file = "./training_debug/logs/TEST_Git/"
+
+
 #loss
 snapshot = "./training_debug/logs/TEST_Git/"
 log_mode = 'w'
@@ -49,29 +33,30 @@ resample_num = 132
 class sia_net(nn.Module):
 	def __init__(self, model):
 		super(sia_net, self).__init__()
-		self.fc1	=	nn.Sequential(nn.Sequential(*list(model.children())[:-2]), nn.AdaptiveAvgPool2d(1))
+		self.fc1	=	nn.Sequential(*list(model.children())[:-1])
 
-		self.fc1_0	=	nn.Sequential(nn.Linear(2048, 1024), nn.Linear(1024, 512))
+		# self.fc1_0	=	nn.Sequential(nn.Linear(2048, 1024), nn.Linear(1024, 512))
 
-		self.fc1_1	=	nn.Sequential(nn.Linear(2048, 62))
+		# self.fc1_1	=	nn.Sequential(nn.Linear(2048, 62))
 
 	def forward_once(self, x):
 		
-		x = self.fc1(x)
+		# x = self.fc1(x)
 
-		x = x.view(x.size()[0], -1)
+		# x = x.view(x.size()[0], -1)
 
-		feature = self.fc1_0(x)
+		# feature = self.fc1_0(x)
 
-		param = self.fc1_1(x)
+		uv = self.fc1(x)
+		feature = self.fc1(x)
 
-		return feature, param
+		return feature, uv
 
 	def forward(self, input_l, input_r):
-		feature_l, param_l = self.forward_once(input_l)
-		feature_r, param_r = self.forward_once(input_r)
+		feature_l, uv_l = self.forward_once(input_l)
+		feature_r, uv_r = self.forward_once(input_r)
 
-		return feature_l, feature_r, param_l, param_r
+		return feature_l, feature_r, uv_l, uv_r
 
 def show_plot(iteration, loss):
 	plt.clf()
@@ -107,26 +92,23 @@ manualSeed = 5
 
 torch.manual_seed(manualSeed)
 
-FLAGS = {
-	"lr"  : None,
-	"start_epoch": 1,
-	"device": "cuda",
-
-	"batch_size" : 32,
-	"base_lr": 0.001,
-	"momentum" : 0.9,
-	"weight_decay": 5e-4,
-	"epochs": 50,
-	"milestones" : 30
-}
 FLAGS = {   
 			"start_epoch": 1,
 			"target_epoch": 500,
 			"device": "cuda",
 			"mask_path": "./utils/uv_data/uv_weight_mask_gdh.png",
 			"lr": 0.0001,
-			"batch_size": 16,
+			"batch_size": 32,
 			"save_interval": 5,
+			"base_lr": 0.001,
+			"momentum" : 0.9,
+			"weight_decay": 5e-4,
+			"epochs": 50,
+			"milestones" : 30,
+			"print_freq" : 50,
+			"devices_id" : [0],
+			"workers" : 8,
+			"log_file" : "./training_debug/logs/TEST_Git/",
 			"normalize_mean": [0.485, 0.456, 0.406],
 			"normalize_std": [0.229, 0.224, 0.225],
 			"images": "./results",
@@ -155,22 +137,22 @@ def train(train_loader, model, criterion, optimizer, epoch):
 		loss.backward()
 		optimizer.step()
 
-		if i % epochs == 0:
-			print('[Step:%d | Epoch:%d], lr:%.6f, loss:%.6f' % (i, epoch, lr, loss.data.cpu().numpy()))
-			print('[Step:%d | Epoch:%d], lr:%.6f, loss:%.6f' % (i, epoch, lr, loss.data.cpu().numpy()), file=open(log_file + 'contrastive_print.txt','a'))
+		if i % FLAGS["target_epoch"] == 0:
+			print('[Step:%d | Epoch:%d], lr:%.6f, loss:%.6f' % (i, epoch, FLAGS["lr"], loss.data.cpu().numpy()))
+			print('[Step:%d | Epoch:%d], lr:%.6f, loss:%.6f' % (i, epoch, FLAGS["lr"], loss.data.cpu().numpy()), file=open(FLAGS["log_file"] + 'contrastive_print.txt','a'))
 
 def main(root_dir):
 	###		Step1: Define the model structure
 	model 	= load_SPRNET()
-	torch.cuda.set_device(devices_id[0])
-	model	= nn.DataParallel(model, device_ids=devices_id).cuda()
+	torch.cuda.set_device(FLAGS["devices_id"][0])
+	model	= nn.DataParallel(model, device_ids=FLAGS["devices_id"]).cuda()
 
 	###		Step2: Loss and optimization method
 	criterion = WeightMaskLoss(mask_path=FLAGS["mask_path"])
 	optimizer = torch.optim.SGD(model.parameters(),
-								lr = base_lr,
-								momentum = momentum,
-								weight_decay = weight_decay,
+								lr = FLAGS["base_lr"],
+								momentum = FLAGS["momentum"],
+								weight_decay = FLAGS["weight_decay"],
 								nesterov = True)
 
 	#		Step3: Data
@@ -184,7 +166,7 @@ def main(root_dir):
 		transforms.Normalize(dir, FLAGS["normalize_std"])
 	])
 
-	train_loader = DataLoader(train_dataset, batch_size = batch_size, num_workers=workers,
+	train_loader = DataLoader(train_dataset, batch_size = FLAGS["batch_size"], num_workers=FLAGS["workers"],
 								shuffle=False, pin_memory=True, drop_last=True)
 
 
@@ -192,7 +174,7 @@ def main(root_dir):
 
 	for epoch in range(FLAGS["start_epoch"], FLAGS["target_epoch"]):
 		#adjust learning rate
-		adjust_lr_exp(optimizer, base_lr, epoch, epochs, 30)
+		adjust_lr_exp(optimizer, FLAGS["base_lr"], epoch, FLAGS["target_epoch"], 30)
 		#train for one epoch
 		train(train_loader, model, criterion, optimizer, epoch)
 		#save model paramers

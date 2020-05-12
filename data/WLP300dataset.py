@@ -5,6 +5,7 @@ import numpy as np
 import glob
 import torch
 import torch.utils.data as data
+import torchvision.transforms.functional as F
 import cv2
 import pickle
 import argparse
@@ -74,6 +75,13 @@ class SiaTrainDataset(data.Dataset):
 		img2 = cv2.imread(img2_path)
 		uv1  = np.load(target1_path)
 		uv2	 = np.load(target2_path)
+
+		sample = {'img1': img1, 'img2': img2, 'uv1': uv1, 'uv2': uv2}
+		if self.transform:
+			sample = self.transform(sample)
+		
+		img1, img2, uv1, uv2 = sample['img1'], sample['img2'], sample['uv1'], sample['uv2']
+		
 		return img1, img2, torch.from_numpy(np.array([is_same], dtype = np.float32)), uv1, uv2
 	
 	def __len__(self):
@@ -86,19 +94,24 @@ class ToTensor(object):
 	"""Convert ndarrays in sample to Tensors."""
 
 	def __call__(self, sample):
-		uv_map, origin = sample['uv_map'], sample['origin']
+		img1, img2, uv1, uv2 = sample['img1'], sample['img2'], sample['uv1'], sample['uv2']
 
 		# swap color axis because
 		# numpy image: H x W x C
 		# torch image: C X H X W
-		uv_map = uv_map.transpose((2, 0, 1))
-		origin = origin.transpose((2, 0, 1))
+		uv1 = uv1.transpose((2, 0, 1))
+		img1 = img1.transpose((2, 0, 1))
+		uv2 = uv2.transpose((2, 0, 1))
+		img2 = img2.transpose((2, 0, 1))
 
-		uv_map = uv_map.astype("float32") / 255.
-		uv_map = np.clip(uv_map, 0, 1)
-		origin = origin.astype("float32") / 255.
-		
-		return {'uv_map': torch.from_numpy(uv_map), 'origin': torch.from_numpy(origin)}
+		uv1 = uv1.astype("float32") / 255.
+		uv1 = np.clip(uv1, 0, 1)
+		img1 = img1.astype("float32") / 255.
+		uv2 = uv2.astype("float32") / 255.
+		uv2 = np.clip(uv2, 0, 1)
+		img2 = img2.astype("float32") / 255.
+
+		return {'img1': torch.from_numpy(img1), 'img2': torch.from_numpy(img2), 'uv1': torch.from_numpy(uv1), 'uv2': torch.from_numpy(uv2)}
 
 
 class ToNormalize(object):
@@ -110,6 +123,7 @@ class ToNormalize(object):
 		self.inplace = inplace
 	
 	def __call__(self, sample):
-		uv_map, origin = sample['uv_map'], sample['origin']
-		origin = F.normalize(origin, self.mean, self.std)
-		return {'uv_map': uv_map, 'origin': origin}
+		img1, img2, uv1, uv2 = sample['img1'], sample['img2'], sample['uv1'], sample['uv2']
+		img1 = F.normalize(img1, self.mean, self.std)
+		img2 = F.normalize(img2, self.mean, self.std)
+		return {'img1': img1, 'img2': img1, 'uv1': uv1, 'uv2': uv2}
