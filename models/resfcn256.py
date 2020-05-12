@@ -2,9 +2,11 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision.models import *
+
 import numpy as np
 
-from torchvision.models import *
+
 
 def conv3x3(in_planes, out_planes, stride=1, dilation=1,padding="same"):
 	if padding == "same":
@@ -12,14 +14,16 @@ def conv3x3(in_planes, out_planes, stride=1, dilation=1,padding="same"):
 
 class ResBlock(nn.Module):
 	expansion = 1
+
 	def __init__(self, inplanes, planes, stride=1, kernel_size=3, norm_layer=None):
 		super(ResBlock, self).__init__()
 		if norm_layer is None:
 			norm_layer = nn.BatchNorm2d
-		self.shortcut_conv == nn.Conv2d(inplanes, planes, kernel_size=1,stride=stride)
-		self.conv1 = nn.Conv2d(inplanes, planes // 2, kernel_size = 1, stride = 1, padding = 0)
-		self.conv2 = nn.Conv2d(planes // 2, planes // 2, kernel_size = kernel_size, stride = stride, padding=kernel_size//2)
-		self.conv3 = nn.Conv2d(planes // 2, planes, kernel_size = 1, stride = 1, padding = 0)
+
+		self.shortcut_conv  = nn.Conv2d(inplanes, planes, kernel_size=1,stride=stride)
+		self.conv1 			= nn.Conv2d(inplanes, planes // 2, kernel_size = 1, stride = 1, padding = 0)
+		self.conv2 			= nn.Conv2d(planes // 2, planes // 2, kernel_size = kernel_size, stride = stride, padding=kernel_size//2)
+		self.conv3 			= nn.Conv2d(planes // 2, planes, kernel_size = 1, stride = 1, padding = 0)
 
 		self.normalizer_fn = norm_layer(planes)
 		self.activation_fn = nn.ReLU(inplace=True)
@@ -56,8 +60,8 @@ class ResFCN256(nn.Module):
 		self.block2				= ResBlock(inplanes=self.size * 2, planes=self.size * 2, stride=1)
 		self.block3				= ResBlock(inplanes=self.size * 2, planes=self.size * 4, stride=2)
 		self.block4				= ResBlock(inplanes=self.size * 4, planes=self.size * 4, stride=1)
-		self.block5				= ResBlock(inplaces=self.size * 4, planes=self.size * 8, stride=2)
-		self.block6				= ResBlock(inplaces=self.size * 8, planes=self.size * 8, stride=1)
+		self.block5				= ResBlock(inplanes=self.size * 4, planes=self.size * 8, stride=2)
+		self.block6				= ResBlock(inplanes=self.size * 8, planes=self.size * 8, stride=1)
 		self.block7				= ResBlock(inplanes=self.size * 8, planes=self.size * 16, stride=2)
 		self.block8				= ResBlock(inplanes=self.size * 16, planes=self.size * 16,stride=1)
 		self.block9				= ResBlock(inplanes=self.size * 16, planes=self.size * 32, stride=2)
@@ -107,6 +111,7 @@ class ResFCN256(nn.Module):
 		pd = self.upsample7(pd)
 		pd = self.upsample8(pd)
 		pd = self.upsample9(pd)
+
 		pd = self.upsample10(pd)
 		pd = self.upsample11(pd)
 		pd = self.upsample12(pd)

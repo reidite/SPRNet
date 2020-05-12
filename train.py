@@ -14,7 +14,7 @@ from pathlib import Path
 from torch.utils.data import DataLoader
 from data.WLP300dataset import SiaTrainDataset, ToTensor, ToNormalize
 # from io_utils import mkdir
-# from sia_loss import WPDCLoss_0
+from models.sia_loss import WeightMaskLoss
 from models.resfcn256 import ResFCN256
 
 #global configuration
@@ -56,9 +56,11 @@ class sia_net(nn.Module):
 		self.fc1	=	nn.Sequential(nn.Sequential(*list(model.children())[:-2]), nn.AdaptiveAvgPool2d(1))
 
 		self.fc1_0	=	nn.Sequential(nn.Linear(2048, 1024), nn.Linear(1024, 512))
+
 		self.fc1_1	=	nn.Sequential(nn.Linear(2048, 62))
 
 	def forward_once(self, x):
+		
 		x = self.fc1(x)
 
 		x = x.view(x.size()[0], -1)
@@ -95,7 +97,7 @@ def adjust_lr_exp(optimizer, base_lr, ep, total_ep, start_decay_at_ep):
 		lr = (base_lr*(0.001**(float(ep + 1 - start_decay_at_ep)/(total_ep + 1 - start_decay_at_ep))))
 		param_group['lr'] = lr
 
-def load_PRNET():
+def load_SPRNET():
 	prnet = ResFCN256()
 	model = sia_net(prnet)
 	
@@ -125,6 +127,7 @@ FLAGS = {
 			"start_epoch": 0,
 			"target_epoch": 500,
 			"device": "cuda",
+			"mask_path": "./utils/uv_data/uv_weight_mask_gdh.png",
 			"lr": 0.0001,
 			"batch_size": 16,
 			"save_interval": 5,
@@ -137,7 +140,21 @@ FLAGS = {
 			"resume": True
 		}
 def main(root_dir):
-	train_dataset = SiaTrainDataset(
+	###		Step1: Define the model structure
+	model 	= load_SPRNET()
+	torch.cuda.set_device(devices_id[0])
+	model	= nn.DataParallel(model, device_ids=devices_id).cuda()
+
+	###		Step2: Loss and optimization method
+	criterion = WeightMaskLoss(mask_path=FLAGS["mask_path"]).cuda()
+	optimizer = torch.optim.SGD(model.parameters(),
+								lr = base_lr,
+								momentum = momentum,
+								weight_decay = weight_decay,
+								nesterov = True)
+
+	#		Step3: Data
+	train_dataset, val_dataset = SiaTrainDataset(
 		root_dir  = root_dir,
 		transform = transforms.Compose([ToTensor(), ToNormalize(FLAGS["normalize_mean"], FLAGS["normalize_std"])])
 	)
@@ -146,13 +163,28 @@ def main(root_dir):
 		transforms.ToTensor(),
 		transforms.Normalize(FLAGS["normalize_mean"], FLAGS["normalize_std"])
 	])
-	start_epoch, target_epoch = FLAGS['start_epoch'], FLAGS['target_epoch']
-	model = load_PRNET()
-	torch.cuda.set_device(devices_id[0])
-	model	= nn.DataParallel(model, devices_ids=devices_id).cuda()
+
 	train_loader = DataLoader(train_dataset, batch_size = batch_size, num_workers=workers,
 								shuffle=False, pin_memory=True, drop_last=True)
 
+	val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=workers,
+                            shuffle=False, pin_memory=True)
+
+	cudnn.benchmark = True
+
+	for epoch in range(start_epoch, epochs+1):
+		#adjust learning rate
+		adjust_lr_exp(optimizer, base_lr, epoch, epochs, 30)
+		#train for one epoch
+		train(train_loader, model, criterion, optimizer, epoch)
+		#save model paramers
+		filename = f'{snapshot}_checkpoint_epoch_{epoch}.pth.tar'
+		save_checkpoint({
+							'epoch':epoch,
+							'state_dict':model.state_dict()
+						},
+						filename
+						)
 
 if __name__ == "__main__":
 	main(str(os.path.abspath(os.getcwd())))

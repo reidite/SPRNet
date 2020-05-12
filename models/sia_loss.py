@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+import os
+import cv2
 
 from models.params import *
 from math import sqrt
@@ -19,4 +21,26 @@ def _parse_param_batch(param):
 	alpha_exp	=	param[:, 52:].view(N, -1, 1)
 	return p, offset, alpha_shp, alpha_exp
 
-class WPDCLoss_0(nn.Module):
+class WeightMaskLoss(nn.Module):
+    """
+        L2_Loss * Weight Mask
+    """
+
+    def __init__(self, mask_path):
+        super(WeightMaskLoss, self).__init__()
+        if os.path.exists(mask_path):
+            self.mask = cv2.imread(mask_path, 0)
+            self.mask = torch.from_numpy(preprocess(self.mask)).float().to("cuda")
+        else:
+            raise FileNotFoundError("Mask File Not Found! Please Check your Settings!")
+
+    def forward(self, pred, gt):
+        result = torch.mean(torch.pow((pred - gt), 2), dim=1)
+        result = torch.mul(result, self.mask)
+
+        result = torch.sum(result)
+        result = result / (self.mask.size(1) ** 2)
+        
+        # result = torch.mean(result)
+        return result
+

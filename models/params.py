@@ -1,6 +1,6 @@
 import os.path as osp
 import numpy as np
-from io_utils import _load, _numpy_to_cuda, _numpy_to_tensor, _load_gpu
+# from io_utils import _load, _numpy_to_cuda, _numpy_to_tensor, _load_gpu
 
 def make_abs_path(d):
 	return osp.join(osp.dirname(osp.realpath(__file__)), d)
