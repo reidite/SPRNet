@@ -1,4 +1,13 @@
 {
                  "python.linting.enabled": true,
-                 "python.pythonPath": "/home/viet/anaconda3/bin/python"
+                "python.pythonPath": "/home/viet/anaconda3/bin/python",
+                "cSpell.words": [
+                    "SPRNET",
+                    "imshow",
+                    "nesterov",
+                    "npimg",
+                    "prnet",
+                    "resfcn",
+                    "wpdc"
+                ]
 }

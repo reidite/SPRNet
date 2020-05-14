@@ -55,35 +55,65 @@ class ResFCN256(nn.Module):
 		self.channel			= channel
 		self.size				= size
 
+		### 256 x 256 x 3
 		self.block0				= conv3x3(in_planes=3, out_planes=self.size, padding="same")
-		self.block1				= ResBlock(inplanes=self.size, planes=self.size * 2, stride=2)
+		### 256 x 256 x 16
+		self.block1				= ResBlock(inplanes=self.size	 , planes=self.size * 2, stride=2)
+		### 128 x 128 x 32
 		self.block2				= ResBlock(inplanes=self.size * 2, planes=self.size * 2, stride=1)
+		### 128 x 128 x 32
 		self.block3				= ResBlock(inplanes=self.size * 2, planes=self.size * 4, stride=2)
+		### 64 x 64 x 64
 		self.block4				= ResBlock(inplanes=self.size * 4, planes=self.size * 4, stride=1)
+		### 64 x 64 x 64
 		self.block5				= ResBlock(inplanes=self.size * 4, planes=self.size * 8, stride=2)
+		### 32 x 32 x 128
 		self.block6				= ResBlock(inplanes=self.size * 8, planes=self.size * 8, stride=1)
+		### 32 x 32 x 128
 		self.block7				= ResBlock(inplanes=self.size * 8, planes=self.size * 16, stride=2)
+		### 16 x 16 x 256
 		self.block8				= ResBlock(inplanes=self.size * 16, planes=self.size * 16,stride=1)
+		### 16 x 16 x 256
 		self.block9				= ResBlock(inplanes=self.size * 16, planes=self.size * 32, stride=2)
+		### 8 x 8 x 512
 		self.block10			= ResBlock(inplanes=self.size * 32, planes=self.size * 32, stride=1)
+		### 8 x 8 x 512
+
 
 		self.upsample0			= nn.ConvTranspose2d(self.size * 32, self.size * 32, kernel_size=3, stride=1, padding=1)
+		### 8 x 8 x 512
 		self.upsample1			= nn.ConvTranspose2d(self.size * 32, self.size * 16, kernel_size=4, stride=2, padding=1)
+		### 16 x 16 x 256
 		self.upsample2			= nn.ConvTranspose2d(self.size * 16, self.size * 16, kernel_size=3, stride=1, padding=1)
+		### 16 x 16 x 256
 		self.upsample3			= nn.ConvTranspose2d(self.size * 16, self.size * 16, kernel_size=3, stride=1, padding=1)
+		### 16 x 16 x 256
 		self.upsample4			= nn.ConvTranspose2d(self.size * 16, self.size * 8 , kernel_size=4, stride=2, padding=1)
+		### 32 x 32 x 128
 		self.upsample5			= nn.ConvTranspose2d(self.size * 8 , self.size * 8 , kernel_size=3, stride=1, padding=1)
+		### 32 x 32 x 128
 		self.upsample6			= nn.ConvTranspose2d(self.size * 8 , self.size * 8 , kernel_size=3, stride=1, padding=1)
+		### 32 x 32 x 128
 		self.upsample7			= nn.ConvTranspose2d(self.size * 8 , self.size * 4 , kernel_size=4, stride=2, padding=1)
+		### 64 x 64 x 64
 		self.upsample8			= nn.ConvTranspose2d(self.size * 4 , self.size * 4 , kernel_size=3, stride=1, padding=1)
+		### 64 x 64 x 64
 		self.upsample9			= nn.ConvTranspose2d(self.size * 4 , self.size * 4 , kernel_size=3, stride=1, padding=1)
+		### 64 x 64 x 64
 		self.upsample10			= nn.ConvTranspose2d(self.size * 4 , self.size * 2 , kernel_size=4, stride=2, padding=1)
+		### 128 x 128 x 32
 		self.upsample11			= nn.ConvTranspose2d(self.size * 2 , self.size * 2 , kernel_size=3, stride=1, padding=1)
+		### 128 x 128 x 32
 		self.upsample12			= nn.ConvTranspose2d(self.size * 2 , self.size	   , kernel_size=4, stride=2, padding=1)
+		### 256 x 256 x 16
 		self.upsample13			= nn.ConvTranspose2d(self.size	   , self.size     , kernel_size=3, stride=1, padding=1)
+		### 256 x 256 x 16
 		self.upsample14			= nn.ConvTranspose2d(self.size	   , self.channel  , kernel_size=3, stride=1, padding=1)
+		### 256 x 256 x 3
 		self.upsample15			= nn.ConvTranspose2d(self.channel  , self.channel  , kernel_size=3, stride=1, padding=1)
+		### 256 x 256 x 3
 		self.upsample16			= nn.ConvTranspose2d(self.channel  , self.channel  , kernel_size=3, stride=1, padding=1)
+		### 256 x 256 x 3
 
 		self.sigmoid			= nn.Sigmoid()
 
