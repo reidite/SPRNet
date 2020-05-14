@@ -3,11 +3,18 @@
                 "python.pythonPath": "/home/viet/anaconda3/bin/python",
                 "cSpell.words": [
                     "SPRNET",
+                    "fprs",
                     "imshow",
+                    "issame",
                     "nesterov",
                     "npimg",
+                    "nrof",
                     "prnet",
+                    "pyplot",
                     "resfcn",
-                    "wpdc"
+                    "tprs",
+                    "wpdc",
+                    "xlabel",
+                    "ylabel"
                 ]
 }
