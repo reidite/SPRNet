@@ -124,7 +124,7 @@ def imshow(img, text=None):
 
 if __name__ == '__main__':
     path            = osp.dirname(osp.abspath(__file__))
-    checkpoint_fp   = osp.join(path, "training_debug","logs", "checkpoint_epoch_50.pth.tar")
+    checkpoint_fp   = osp.join(path, "training_debug","logs", "")
     root_ddfa       = osp.join(path, "data", "train_aug_120x120")
     pairs_txt       = osp.join(path, "test", "pairs_ddfa.txt")
     log_dir         = osp.join(path, "test", "cc.png")

@@ -255,9 +255,9 @@ def generate_roc_curve(fpr, tpr, path):
     fig = plt.figure()
     plt.rcParams['savefig.dpi'] = 300
     plt.rcParams['figure.dpi'] = 300
-    plt.title('SET1', fontname = "Times New Roman")         #add by ly
-    plt.xlabel('False Positive Rate', fontname = "Times New Roman")
-    plt.ylabel('True Positive Rate', fontname = "Times New Roman")
+    plt.title('SET1', fontname = "DejaVu Sans")
+    plt.xlabel('False Positive Rate', fontname = "DejaVu Sans")
+    plt.ylabel('True Positive Rate', fontname = "DejaVu Sans")
     plt.grid(linestyle = '--')
     plt.plot(fpr, tpr, color='deepskyblue')
     fig.savefig(path, dpi=300)

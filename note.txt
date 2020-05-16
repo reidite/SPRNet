@@ -1,0 +1,2 @@
+Tensor batchsize * feature output trong GPU -> CPU thanh -> numpy batchsize * feature -> lan luot het epoch thanh array cac numpy co length la so epoch -> numpy
+Tung feature output trong GPU -> CPU -> numpy -> lan luot het epoch thanh array cac numpy co length la so feature -> numpy

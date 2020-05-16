@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 from data.WLP300dataset import SiaTrainDataset, ToTensor, ToNormalize
 # from io_utils import mkdir
 from models.sia_loss import UVLoss0, WeightMaskLoss
-from models.resfcn256 import ResFCN256
+from models.resfcn120 import ResFCN120
 
 
 FLAGS = {   
@@ -64,30 +64,29 @@ resample_num = 132
 class sia_net(nn.Module):
 	def __init__(self, model):
 		super(sia_net, self).__init__()
-		self.fc1	=	nn.Sequential(*list(model.children())[:-1])
 
-		# self.fc1_0	=	nn.Sequential(nn.Linear(2048, 1024), nn.Linear(1024, 512))
+		self.sigmoid	= nn.Sequential(nn.Sequential(*list(model.children())[:-1]), nn.Sigmoid())
 
-		# self.fc1_1	=	nn.Sequential(nn.Linear(2048, 62))
+		self.fc1 = nn.Sequential(nn.Sequential(*list(model.children())[:-18]), nn.AdaptiveAvgPool2d((1, 1)), nn.AdaptiveAvgPool2d(1))
+
+		self.fc1_0	=	nn.Sequential(nn.Linear(2048, 1024), nn.Linear(1024, 512))
+
+		self.fc1_1	=	nn.Sequential(nn.Linear(2048, 62))
 
 	def forward_once(self, x):
-		
-		# x = self.fc1(x)
+		x 		= self.fc1(x)
+		x 		= x.view(x.size()[0], -1)
+		feature = self.fc1_0(x)
+		param 	= self.fc1_1(x)
 
-		# x = x.view(x.size()[0], -1)
-
-		# feature = self.fc1_0(x)
-
-		uv = self.fc1(x)
-		feature = self.fc1(x)
-
-		return feature, uv
+		uv 		= self.sigmoid(x)
+		return feature, param, uv
 
 	def forward(self, input_l, input_r):
-		feature_l, uv_l = self.forward_once(input_l)
-		feature_r, uv_r = self.forward_once(input_r)
+		feature_l, param_l, uv_l = self.forward_once(input_l)
+		feature_r, param_r, uv_r = self.forward_once(input_r)
 
-		return feature_l, feature_r, uv_l, uv_r
+		return feature_l, feature_r, param_l, param_r, uv_l, uv_r
 
 #region TOOLKIT
 def save_checkpoint(state, filename="checkpoint.pth.tar"):
@@ -169,7 +168,7 @@ def adjust_lr_shp(optimizer, base_lr, ep, total_ep, start_decay_at_ep):
 #endregion
 
 def load_SPRNET():
-	prnet = ResFCN256()
+	prnet = ResFCN120()
 	model = sia_net(prnet)
 	
 	return model
@@ -192,9 +191,9 @@ def train_uv(train_loader, model, criterion_uv, optimizer, epoch):
 		target_l = target_l.cuda(non_blocking=True)
 		target_r = target_r.cuda(non_blocking=True)
 
-		feature_l, feature_r, output_l, output_r = model(img_l, img_r)
+		feature_l, feature_r, param_l, param_r, uv_l, uv_r = model(img_l, img_r)
 
-		loss = criterion_uv(output_l, output_r, label, target_l, target_r)
+		loss = criterion_uv(uv_l, uv_r, label, target_l, target_r)
 
 		optimizer.zero_grad()
 		loss.backward()
