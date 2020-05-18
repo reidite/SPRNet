@@ -13,8 +13,12 @@
                     "pyplot",
                     "resfcn",
                     "tprs",
+                    "vmax",
+                    "vmin",
                     "wpdc",
                     "xlabel",
-                    "ylabel"
+                    "ylabel",
+                    "zhigh",
+                    "zlow"
                 ]
 }

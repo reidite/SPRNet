@@ -1,9 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
+from skimage import io, transform
 import math
 import os
 import cv2
+
 
 from math import sqrt
 from torch.autograd import Variable
@@ -11,174 +14,98 @@ from models.io_utils import _load, _numpy_to_cuda, _numpy_to_tensor, _load_gpu
 
 _to_tensor = _numpy_to_cuda
 
-def _parse_param_batch(param):
-	N 			= 	param.shape[0]
-	p_			= 	param[:, :, :12].view(N, 3, -1)
-	p			= 	p_[:, :, :3]
-	offset		= 	p_[:, :, -1].view(N, 3, 1)
-	alpha_shp	=	param[:, 12:52].view(N, -1, 1)
-	alpha_exp	=	param[:, 52:].view(N, -1, 1)
-	return p, offset, alpha_shp, alpha_exp
+#region UV Loss
+def UVLoss(is_foreface=False, is_weighted=False, is_nme=False):
+#endregion
 
-def preprocess(mask):
-    """
-    :param mask: grayscale of mask.
-    :return:
-    """
-    tmp = {}
-    mask[mask > 0] = mask[mask > 0] / 16
-    mask[mask == 15] = 16
-    mask[mask == 7] = 8
-    
-    return mask
+#region UV Loss
+def PRNError(is_2d=False, is_normalized=True, is_foreface=True, is_landmark=False, is_gt_landmark=False):
+    def templateError(y_gt, y_fit, bbox=None, landmarks=None):
+        assert (not (is_foreface and is_landmark))
+        y_true = y_gt.copy()
+        y_pred = y_fit.copy()
+        y_true[:, :, 2] = y_true[:, :, 2] * face_mask_np
+        y_pred[:, :, 2] = y_pred[:, :, 2] * face_mask_np
+        y_true_mean = np.mean(y_true[:, :, 2]) * face_mask_mean_fix_rate
+        y_pred_mean = np.mean(y_pred[:, :, 2]) * face_mask_mean_fix_rate
+        y_true[:, :, 2] = y_true[:, :, 2] - y_true_mean
+        y_pred[:, :, 2] = y_pred[:, :, 2] - y_pred_mean
 
-def tile(a, dim, n_tile):
-    init_dim = a.size(dim)
-    repeat_idx = [1] * a.dim()
-    repeat_idx[dim] = n_tile
-    a = a.repeat(*(repeat_idx))
-    order_index = torch.LongTensor(np.concatenate([init_dim * np.arange(n_tile) + i for i in range(init_dim)]))
-    return torch.index_select(a, dim, order_index)
+        if is_landmark:
+            # the gt landmark is not the same as the landmarks get from mesh using index
+            if is_gt_landmark:
+                gt = landmarks.copy()
+                gt[:, 2] = gt[:, 2] - gt[:, 2].mean()
 
-def gaussian(window_size, sigma):
-    gauss = torch.Tensor([exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2)) for x in range(window_size)])
-    return gauss / gauss.sum()
-
-def _fspecial_gauss(window_size, sigma=1.5):
-    # Function to mimic the 'fspecial' gaussian MATLAB function.
-    coords = np.arange(0, window_size, dtype=np.float32)
-    coords -= (window_size - 1) / 2.0
-
-    g = coords ** 2
-    g *= (-0.5 / (sigma ** 2))
-    g = np.reshape(g, (1, -1)) + np.reshape(g, (-1, 1))
-    g = torch.from_numpy(np.reshape(g, (1, -1)))
-    g = torch.softmax(g, dim=1)
-    g = g / g.sum()
-    return g
-
-
-# 2019.05.26. butterworth filter.
-# ref: http://www.cnblogs.com/laumians-notes/p/8592968.html
-def butterworth(window_size, sigma=1.5, n=2):
-    nn = 2 * n
-    bw = torch.Tensor([1 / (1 + ((x - window_size // 2) / sigma) ** nn) for x in range(window_size)])
-    return bw / bw.sum()
-
-
-def create_window(window_size, channel=3, sigma=1.5, gauss='original', n=2):
-    if gauss == 'original':
-        _1D_window = gaussian(window_size, sigma).unsqueeze(1)
-        _2D_window = _1D_window.mm(_1D_window.t()).float().unsqueeze(0).unsqueeze(0)
-        window = Variable(_2D_window.expand(channel, 1, window_size, window_size).contiguous())
-        return window
-    elif gauss == 'butterworth':
-        _1D_window = butterworth(window_size, sigma, n).unsqueeze(1)
-        _2D_window = _1D_window.mm(_1D_window.t()).float().unsqueeze(0).unsqueeze(0)
-        window = Variable(_2D_window.expand(channel, 1, window_size, window_size).contiguous())
-        return window
-    else:
-        g = _fspecial_gauss(window_size, sigma)
-        g = torch.reshape(g, (1, 1, window_size, window_size))
-        # 2019.06.05.
-        # https://discuss.pytorch.org/t/how-to-tile-a-tensor/13853
-        g = tile(g, 0, 3)
-        return g
-
-
-def _ssim(img1, img2, window_size=11, window=None, val_range=2, size_average=True):
-    # Value range can be different from 255. Other common ranges are 1 (sigmoid) and 2 (tanh).
-
-    # padd = window_size//2
-    padd = 0
-    (batch, channel, height, width) = img1.size()
-    if window is None:
-        real_size = min(window_size, height, width)
-        window = create_window(real_size, channel=channel).to(img1.device)
-
-    # 2019.05.05
-    # pytorch默认是NCHW. 跟caffe一样.
-    mu1 = F.conv2d(img1, window, padding=padd, groups=channel)
-    mu2 = F.conv2d(img2, window, padding=padd, groups=channel)
-
-    mu1_sq = mu1.pow(2)
-    mu2_sq = mu2.pow(2)
-    mu1_mu2 = mu1 * mu2
-
-    sigma1_square = F.conv2d(img1 * img1, window, padding=padd, groups=channel) - mu1_sq
-    sigma2_square = F.conv2d(img2 * img2, window, padding=padd, groups=channel) - mu2_sq
-    sigma12_square = F.conv2d(img1 * img2, window, padding=padd, groups=channel) - mu1_mu2
-
-    C1 = (0.01 * val_range) ** 2
-    C2 = (0.03 * val_range) ** 2
-
-    ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12_square + C2)) / (
-            (mu1_sq + mu2_sq + C1) * (sigma1_square + sigma2_square + C2))
-    if size_average:
-        return ssim_map.mean()
-    else:
-        return ssim_map.mean(1).mean(1).mean(1)
-
-### SSIM Loss
-class ORIGINAL_SSIM(torch.nn.Module):
-    def __init__(self, window_size=11, val_range=2, size_average=True):
-        super(ORIGINAL_SSIM, self).__init__()
-        self.window_size = window_size
-        self.size_average = size_average
-        self.val_range = val_range
-
-        self.channel = 3
-        self.window = create_window(window_size, self.channel)
-
-    def forward(self, img1, img2):
-        (_, channel, _, _) = img1.size()
-
-        if channel == self.channel and self.window.data.type() == img1.data.type():
-            window = self.window
+                pred = y_pred[uv_kpt[:, 0], uv_kpt[:, 1]]
+                diff = np.square(gt - pred)
+                if is_2d:
+                    dist = np.sqrt(np.sum(diff[:, 0:2], axis=-1))
+                else:
+                    dist = np.sqrt(np.sum(diff, axis=-1))
+            else:
+                gt = y_true[uv_kpt[:, 0], uv_kpt[:, 1]]
+                pred = y_pred[uv_kpt[:, 0], uv_kpt[:, 1]]
+                gt[:, 2] = gt[:, 2] - gt[:, 2].mean()
+                pred[:, 2] = pred[:, 2] - pred[:, 2].mean()
+                diff = np.square(gt - pred)
+                if is_2d:
+                    dist = np.sqrt(np.sum(diff[:, 0:2], axis=-1))
+                else:
+                    dist = np.sqrt(np.sum(diff, axis=-1))
         else:
-            window = create_window(self.window_size, channel)
+            diff = np.square(y_true - y_pred)
+            if is_2d:
+                dist = np.sqrt(np.sum(diff[:, :, 0:2], axis=-1))
+            else:
+                # 3d
+                dist = np.sqrt(np.sum(diff, axis=-1))
+            if is_foreface:
+                dist = dist * face_mask_np * face_mask_mean_fix_rate
 
-            if img1.is_cuda:
-                window = window.cuda(img1.get_device())
-            window = window.type_as(img1)
+        if is_normalized:  # 2D bbox size
+            # bbox_size = np.sqrt(np.sum(np.square(bbox[0, :] - bbox[1, :])))
+            if is_landmark:
+                bbox_size = np.sqrt((bbox[0, 0] - bbox[1, 0]) * (bbox[0, 1] - bbox[1, 1]))
+            else:
+                face_vertices = y_gt[face_mask_np > 0]
+                minx, maxx = np.min(face_vertices[:, 0]), np.max(face_vertices[:, 0])
+                miny, maxy = np.min(face_vertices[:, 1]), np.max(face_vertices[:, 1])
+                llength = np.sqrt((maxx - minx) * (maxy - miny))
+                bbox_size = llength
+        else:  # 3D bbox size
+            face_vertices = y_gt[face_mask_np > 0]
+            minx, maxx = np.min(face_vertices[:, 0]), np.max(face_vertices[:, 0])
+            miny, maxy = np.min(face_vertices[:, 1]), np.max(face_vertices[:, 1])
+            minz, maxz = np.min(face_vertices[:, 2]), np.max(face_vertices[:, 2])
+            if is_landmark:
+                llength = np.sqrt((maxx - minx) ** 2 + (maxy - miny) ** 2)
+            else:
+                llength = np.sqrt((maxx - minx) ** 2 + (maxy - miny) ** 2 + (maxz - minz) ** 2)
+            bbox_size = llength
 
-            self.window = window
-            self.channel = channel
+        loss = np.mean(dist / bbox_size)
+        return loss
 
-        return 1 - _ssim(img1, img2, self.window_size, window, self.val_range, self.size_average)
-
-
-def dfl_ssim(img1, img2, mask, window_size=11, val_range=1, gauss='original'):
-    # Value range can be different from 255. Other common ranges are 1 (sigmoid) and 2 (tanh).
-    # padd = window_size//2
-    padd = 0
-    (batch, channel, height, width) = img1.size()
-    img1, img2 = torch.mul(img1, mask), torch.mul(img2, mask)
-
-    real_size = min(window_size, height, width)
-    window = create_window(real_size, gauss=gauss).to(img1.device)
-
-    # 2019.05.07.
-    c1 = (0.01 * val_range) ** 2
-    c2 = (0.03 * val_range) ** 2
-
-    mu1 = F.conv2d(img1, window, padding=padd, groups=channel)
-    mu2 = F.conv2d(img2, window, padding=padd, groups=channel)
-
-    num0 = mu1 * mu2 * 2.0
-    mu1_sq = mu1.pow(2)
-    mu2_sq = mu2.pow(2)
-    den0 = mu1_sq + mu2_sq
-
-    luminance = (num0 + c1) / (den0 + c1)
-
-    num1 = F.conv2d(img1 * img2, window, padding=padd, groups=channel) * 2.0
-    den1 = F.conv2d(img1 * img1 + img2 * img2, window, padding=padd, groups=channel)
-    cs = (num1 - num0 + c2) / (den1 - den0 + c2)
-    ssim_val = torch.mean(luminance * cs, dim=(-3, -2))
-
-    return torch.mean((1.0 - ssim_val) / 2.0)
-
+    return templateError
+def getErrorFunction(error_func_name='NME'):
+    if error_func_name == 'nme2d' or error_func_name == 'normalized mean error2d':
+        return PRNError(is_2d=True, is_normalized=True, is_foreface=True)
+    elif error_func_name == 'nme3d' or error_func_name == 'normalized mean error3d':
+        return PRNError(is_2d=False, is_normalized=True, is_foreface=True)
+    elif error_func_name == 'landmark2d' or error_func_name == 'normalized mean error3d':
+        return PRNError(is_2d=True, is_normalized=True, is_foreface=False, is_landmark=True)
+    elif error_func_name == 'landmark3d' or error_func_name == 'normalized mean error3d':
+        return PRNError(is_2d=False, is_normalized=True, is_foreface=False, is_landmark=True)
+    elif error_func_name == 'gtlandmark2d' or error_func_name == 'normalized mean error3d':
+        return PRNError(is_2d=True, is_normalized=True, is_foreface=False, is_landmark=True,
+                        is_gt_landmark=True)
+    elif error_func_name == 'gtlandmark3d' or error_func_name == 'normalized mean error3d':
+        return PRNError(is_2d=False, is_normalized=True, is_foreface=False, is_landmark=True,
+                        is_gt_landmark=True)
+    else:
+        print('unknown error:', error_func_name)
+#endregion
 ### Weight Mask Loss
 class WeightMaskLoss(nn.Module):
     """

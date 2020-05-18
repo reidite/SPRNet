@@ -10,10 +10,11 @@ import torch.backends.cudnn as cudnn
 import matplotlib.pylab as plt
 import torch.nn.functional as F
 
+from torch.utils.tensorboard import SummaryWriter
 from pathlib import Path
 from torch.utils.data import DataLoader
 from data.WLP300dataset import SiaTrainDataset, ToTensor, ToNormalize
-# from io_utils import mkdir
+
 from models.sia_loss import UVLoss0, WeightMaskLoss
 from models.resfcn120 import ResFCN120
 
@@ -41,7 +42,7 @@ FLAGS = {
 			"normalize_std": [0.229, 0.224, 0.225],
 			"images": "./results",
 			"gauss_kernel": "original",
-			"summary_path": "./prnet_runs",
+			"summary_path": "./runs",
 			"summary_step": 0,
 			"resume": True
 		}
@@ -51,15 +52,17 @@ lr_id 	= FLAGS["base_lr_id"]
 lr_wpdc = FLAGS["base_lr_wpdc"]
 lr_shp 	= FLAGS["base_lr_shp"]
 
-snapshot = "./training_debug/logs/TEST_Git/"
-log_mode = 'w'
-resume = ''
-size_average = True
-num_classes = 62
-frozen = 'false'
-task = 'all'
-test_initial = False
-resample_num = 132
+LossUV_list, LossWPDC_list, LossSHP_list, LossID_list = [], [], [], []
+writer = SummaryWriter(FLAGS['summary_path'])
+snapshot = "./train_log/"
+# log_mode = 'w'
+# resume = ''
+# size_average = True
+# num_classes = 62
+# frozen = 'false'
+# task = 'all'
+# test_initial = False
+# resample_num = 132
 
 class sia_net(nn.Module):
 	def __init__(self, model):
@@ -67,27 +70,15 @@ class sia_net(nn.Module):
 
 		self.sigmoid	= nn.Sequential(nn.Sequential(*list(model.children())[:-1]), nn.Sigmoid())
 
-		self.fc1 = nn.Sequential(nn.Sequential(*list(model.children())[:-18]), nn.AdaptiveAvgPool2d((1, 1)), nn.AdaptiveAvgPool2d(1))
-
-		self.fc1_0	=	nn.Sequential(nn.Linear(2048, 1024), nn.Linear(1024, 512))
-
-		self.fc1_1	=	nn.Sequential(nn.Linear(2048, 62))
-
 	def forward_once(self, x):
-		x 		= self.fc1(x)
-		x 		= x.view(x.size()[0], -1)
-		feature = self.fc1_0(x)
-		param 	= self.fc1_1(x)
-
 		uv 		= self.sigmoid(x)
-		return feature, param, uv
+		return uv
 
 	def forward(self, input_l, input_r):
-		feature_l, param_l, uv_l = self.forward_once(input_l)
-		feature_r, param_r, uv_r = self.forward_once(input_r)
+		uv_l = self.forward_once(input_l)
+		uv_r = self.forward_once(input_r)
 
-		return feature_l, feature_r, param_l, param_r, uv_l, uv_r
-
+		return uv_l, uv_r
 #region TOOLKIT
 def save_checkpoint(state, filename="checkpoint.pth.tar"):
 	torch.save(state, filename)
@@ -202,113 +193,12 @@ def train_uv(train_loader, model, criterion_uv, optimizer, epoch):
 		if i % FLAGS["target_epoch"] == 0:
 			print('[Step:%d | Epoch:%d], lr:%.6f, loss:%.6f' % (i, epoch, FLAGS["lr"], loss.data.cpu().numpy()))
 			print('[Step:%d | Epoch:%d], lr:%.6f, loss:%.6f' % (i, epoch, FLAGS["lr"], loss.data.cpu().numpy()), file=open(FLAGS["log_file"] + 'contrastive_print.txt','a'))
+		
+		LossUV_list.append(loss.item())
 
-def train_wpdc_id_shp(train_loader, model, criterion_wpdc, criterion_id, criterion_shp, optimizer_wpdc, optimizer_id, optimizer_shp, epoch):
-	model.train()
-
-	for i, (img_l, img_r, label, target_l, target_r) in enumerate(train_loader):
-		target_l.requires_grad 	= False
-		target_r.requires_grad 	= False
-
-		label.requires_grad 	= False
-		label					= label.cuda(non_blocking = True)
-
-		target_l				= target_l.cuda(non_blocking=True)
-		target_r				= target_r.cuda(non_blocking=True)
-
-		feature_l, feature_r, output_l, output_r = model(img_l, img_r)
-
-		##	wpdc-constrain
-		loss_wpdc				= criterion_wpdc(output_l, output_r, label, target_l, target_r)
-		optimizer_wpdc.zero_grad()
-		loss_wpdc.backward(retain_graph=True)
-		optimizer_wpdc.step()
-
-		##	shp-constrain
-		loss_shp				= criterion_shp(output_l, output_r, label)
-		optimizer_shp.zero_grad()
-		loss_shp.backward(retain_graph=True)
-		optimizer_shp.step()
-
-		## identity-constrain
-		loss_id					= criterion_id(feature_l, feature_r, label)
-		optimizer_id.zero_grad()
-		loss_id.backward()
-		optimizer_id.step()
+		writer.add_scalar("UV Loss", LossUV_list[-1], FLAGS["summary_step"])
 
 
-		loss 					= loss_id + loss_shp + loss_wpdc
-
-		if i % FLAGS["target_epoch"] == 0:
-			print('[Step:%d | Epoch:%d], lr_iden:%.8f, lr_shp:%.8f, lr_wpdc:%.8f, loss_iden:%.8f, loss_shp:%.8f, loss_wpdc:%.8f, loss:%.8f' % (i, epoch, lr_id, lr_shp, lr_wpdc, loss_id.data.cpu().numpy(), loss_shp.data.cpu().numpy(), loss_wpdc.data.cpu().numpy(), loss.data.cpu().numpy()))
-			print('[Step:%d | Epoch:%d], lr_iden:%.8f, lr_shp:%.8f, lr_wpdc:%.8f, loss_iden:%.8f, loss_shp:%.8f, loss_wpdc:%.8f, loss:%.8f' % (i, epoch, lr_id, lr_shp, lr_wpdc, loss_id.data.cpu().numpy(), loss_shp.data.cpu().numpy(), loss_wpdc.data.cpu().numpy(), loss.data.cpu().numpy()), file=open(log_file + 'contrastive_print.txt','a'))
-
-def train_wpdc_shp(train_loader, model, criterion_wpdc, criterion_shp, optimizer_wpdc, optimizer_shp, epoch):
-	model.train()
-
-	for i, (img_l, img_r, label, target_l, target_r) in enumerate(train_loader):
-		target_l.requires_grad = False
-		target_r.requires_grad = False
-
-		label.requires_grad = False
-		label = label.cuda(non_blocking = True)
-
-		target_l = target_l.cuda(non_blocking=True)
-		target_r = target_r.cuda(non_blocking=True)
-
-		feature_l, feature_r, output_l, output_r = model(img_l, img_r)
-
-		##	wpdc-constrain
-		loss_wpdc				= criterion_wpdc(output_l, output_r, label, target_l, target_r)
-		optimizer_wpdc.zero_grad()
-		loss_wpdc.backward(retain_graph=True)
-		optimizer_wpdc.step()
-
-		##	shp-constrain
-		loss_shp				= criterion_shp(output_l, output_r, label)
-		optimizer_shp.zero_grad()
-		loss_shp.backward(retain_graph=True)
-		optimizer_shp.step()
-
-
-		loss = loss_wpdc+loss_shp
-
-		if i % FLAGS["target_epoch"] == 0:
-			print('[Step:%d | Epoch:%d], lr_shp:%.8f, lr_wpdc:%.8f, loss_shp:%.8f, loss_wpdc:%.8f, loss:%.8f' % (i, epoch, lr_shp, lr_wpdc, loss_shp.data.cpu().numpy(), loss_wpdc.data.cpu().numpy(), loss.data.cpu().numpy()))
-			print('[Step:%d | Epoch:%d], lr_shp:%.8f, lr_wpdc:%.8f, loss_shp:%.8f, loss_wpdc:%.8f, loss:%.6f' % (i, epoch, lr_shp, lr_wpdc, loss_shp.data.cpu().numpy(), loss_wpdc.data.cpu().numpy(), loss.data.cpu().numpy()), file=open(log_file + 'contrastive_print.txt','a'))
-
-def train_wpdc_id(train_loader, model, criterion_wpdc, criterion_id, optimizer_wpdc, optimizer_id, epoch):
-	model.train()
-
-	for i, (img_l, img_r, label, target_l, target_r) in enumerate(train_loader):
-		target_l.requires_grad = False
-		target_r.requires_grad = False
-
-		label.requires_grad = False
-		label = label.cuda(non_blocking = True)
-
-		target_l = target_l.cuda(non_blocking=True)
-		target_r = target_r.cuda(non_blocking=True)
-
-		feature_l, feature_r, output_l, output_r = model(img_l, img_r)
-
-		##	wpdc-constrain
-		loss_wpdc				= criterion_wpdc(output_l, output_r, label, target_l, target_r)
-		optimizer_wpdc.zero_grad()
-		loss_wpdc.backward(retain_graph=True)
-		optimizer_wpdc.step()
-
-		## identity-constrain
-		loss_id					= criterion_id(feature_l, feature_r, label)
-		optimizer_id.zero_grad()
-		loss_id.backward()
-		optimizer_id.step()
-
-		loss = loss_wpdc+loss_id
-
-		if i % FLAGS["target_epoch"] == 0:
-			print('[Step:%d | Epoch:%d], lr_iden:%.8f, lr_wpdc:%.8f, loss_iden:%.8f, loss_wpdc:%.8f, loss:%.8f' % (i, epoch, lr_id, lr_wpdc, loss_id.data.cpu().numpy(), loss_wpdc.data.cpu().numpy(), loss.data.cpu().numpy()))
-			print('[Step:%d | Epoch:%d], lr_iden:%.8f, lr_wpdc:%.8f, loss_iden:%.8f, loss_wpdc:%.8f, loss:%.6f' % (i, epoch, lr_id, lr_wpdc, loss_id.data.cpu().numpy(), loss_wpdc.data.cpu().numpy(), loss.data.cpu().numpy()), file=open(log_file + 'contrastive_print.txt','a'))
 #endregion
 
 def validate(val_loader, model, criterion, epoch):
@@ -336,11 +226,11 @@ def validate(val_loader, model, criterion, epoch):
 		
 		loss	= np.mean(losses)
 		print('Testing======>>>[Epoch:%d], loss:%.4f' % (epoch, loss))
-        print('[Epoch:%d], loss:%.4f' % (epoch, loss), file=open(log_file + 'test_loss.txt','a'))
-        logging.info(
-                    f'Val: [{epoch}][{len(val_loader)}]\t'
-                    f'Loss {loss:.4f}\t'
-                    )
+		print('[Epoch:%d], loss:%.4f' % (epoch, loss), file=open(log_file + 'test_loss.txt','a'))
+		logging.info(
+					f'Val: [{epoch}][{len(val_loader)}]\t'
+					f'Loss {loss:.4f}\t'
+					)
 
 def main(root_dir):
 	###	Step1: Define the model structure
@@ -370,7 +260,6 @@ def main(root_dir):
 	train_loader = DataLoader(train_dataset, batch_size = FLAGS["batch_size"], num_workers=FLAGS["workers"],
 								shuffle=False, pin_memory=True, drop_last=True)
 
-
 	cudnn.benchmark = True
 
 	for epoch in range(FLAGS["start_epoch"], FLAGS["target_epoch"]):
@@ -389,6 +278,7 @@ def main(root_dir):
 						},
 						filename
 						)
+	writer.close()
 
 if __name__ == "__main__":
 	main(str(os.path.abspath(os.getcwd())))
