@@ -6,71 +6,77 @@ import glob
 import torch
 import torch.utils.data as data
 import torchvision.transforms.functional as F
+from collections import defaultdict
 import cv2
 import pickle
+from pathlib import Path
 import argparse
 import random
 
-def create_label_dict(path):
-	"""
-	Return list of picture's name in group of identity
-	"""
-	label_list = []
-	folder_list = []
-	folder_num = 0
-	for folder in glob.glob(os.path.join(path, "data", "origin", "*")):
-		folder_list += [folder]
-	folder_list.sort(key = lambda x: (int(os.path.basename(os.path.normpath(x))), x))
-	for folder in folder_list:
-		identity_list = []
-		folder_num += 1
-		for file in glob.glob(os.path.join(folder, "*.npy")):
-			identity_list = identity_list + [osp.basename(osp.splitext(file)[0])]
-		label_list.append(identity_list)
-	return label_list, folder_num
+def create_label_dict_train(path):
+	label_dict = defaultdict(list)
+	names_list = Path(path).read_text().strip().split('\n')[0:10]
+	for f_name in names_list:
+		f_s = f_name.split('\000')
+		label_dict[int(f_s[1])].append(f_s[0])
 
+	return label_dict
+
+def split_label_train(path):
+	names_list = Path(path).read_text().strip().split('\n')[0:10]
+	img_name_nlabel = []
+	for img_name in names_list:
+		img_name_nlabel.append(img_name.split('\000')[0])
+		
+	return img_name_nlabel
+
+def create_label_dict_val(path):
+	label_dict = defaultdict(list)
+	names_list = Path(path).read_text().strip().split('\n')
+	for f_name in names_list:
+		f_s = f_name.split('\000')
+		label_dict[int(f_s[1])].append(f_s[0])
+	
+	return label_dict
+
+def split_label_val(path):
+	names_list = Path(path).read_text().strip().split('\n')
+	img_name_nlabel = []
+	for img_name in names_list:
+		img_name_nlabel.append(img_name.split('\000')[0])
+
+	return img_name_nlabel
 
 class SiaTrainDataset(data.Dataset):
-	def __init__(self, root_dir, transform=None):
-		self.root_dir = root_dir
-		self.transform = transform
-		self.label_dict, self.numb_label = create_label_dict(root_dir)
+	def __init__(self, root_dir, filelists, transform=None):
+		self.root_dir 	= root_dir
+		self.transform 	= transform
+		self.label_dict = create_label_dict_train(filelists)
+		self.lines 		= split_label_train(filelists)
+		self.filelists	= Path(filelists).read_text().strip().split('\n')[0:100000]
+		
 
 	def __getitem__(self, index):
-		label_1 = random.choice(range(self.numb_label))
-		label_2 = -1
-		if label_1 == 1991:
-			i = 0
-		img1_name = self.label_dict[label_1][random.choice(range(len(self.label_dict[label_1])))]
-		
-		is_same = np.random.choice([0, 1], p=[0.6, 0.4])
+		label_1 = random.choice(range(len(self.label_dict)))
+		img1_name = random.choice( self.label_dict[label_1])
+		is_same = np.random.choice([0,1], p=[0.8, 0.2])
+
 
 		if is_same:
-			label_2 = label_1
-			img2_name = self.label_dict[label_2][random.choice(range(len(self.label_dict[label_2])))]
+			img2_name = random.choice(self.label_dict[label_1])
 		else:
 			while True:
-				label_2 = random.choice(range(self.numb_label))
+				label_2 = random.choice(range(len(self.label_dict)))
 				if label_2 != label_1:
 					break
-			img2_name = self.label_dict[label_2][random.choice(range(len(self.label_dict[label_2])))]
+			img2_name = random.choice( self.label_dict[label_2])
 		
-		is_flip = np.random.choice([0, 1], p=[0.6, 0.4])
-		if is_flip:
-			img1_path 		= osp.join(self.root_dir, "data", "flip", str(label_1), img1_name + ".jpg")
-			target1_path 	= osp.join(self.root_dir, "data", "flip", str(label_1), img1_name + ".npy")
-		else:
-			img1_path 		= osp.join(self.root_dir, "data", "origin", str(label_1), img1_name + ".jpg")
-			target1_path 	= osp.join(self.root_dir, "data", "origin", str(label_1), img1_name + ".npy")
+		img1_path = osp.join(self.root, "train_aug_256x256", img1_name)
+		img2_path = osp.join(self.root, "train_aug_256x256", img2_name)
 
-		is_flip = np.random.choice([0, 1], p=[0.6, 0.4])
-		if is_flip:
-			img2_path 		= osp.join(self.root_dir, "data", "flip", str(label_2), img2_name + ".jpg")
-			target2_path 	= osp.join(self.root_dir, "data", "flip", str(label_2), img2_name + ".npy")
-		else:
-			img2_path 		= osp.join(self.root_dir, "data", "origin", str(label_2), img2_name + ".jpg")
-			target2_path 	= osp.join(self.root_dir, "data", "origin", str(label_2), img2_name + ".npy")
-		
+		target1_path = osp.join(self.root, "train_uv_256x256", img1_name)
+		target2_path = osp.join(self.root, "train_uv_256x256", img2_name)
+
 		img1 = cv2.imread(img1_path)
 		img2 = cv2.imread(img2_path)
 		uv1  = np.load(target1_path)
@@ -85,10 +91,54 @@ class SiaTrainDataset(data.Dataset):
 		return img1, img2, torch.from_numpy(np.array([is_same], dtype = np.float32)), uv1, uv2
 	
 	def __len__(self):
-		train_length = 0
-		for i in range(self.numb_label):
-			train_length += len(self.label_dict[i])
-		return train_length
+		return len(self.lines)
+
+class SiaValDataset(data.Dataset):
+	def __init__(self, root_dir, filelists, transform=None):
+		self.root_dir = root_dir
+		self.transform = transform
+		self.label_dict = create_label_dict_val(filelists)
+		self.lines = split_label_val(filelists)
+		self.filelists	= Path(filelists).read_text().strip().split('\n')[0:100000]
+		
+
+	def __getitem__(self, index):
+		label_1 = random.choice(range(len(self.label_dict)))
+		img1_name = random.choice( self.label_dict[label_1])
+		is_same = np.random.choice([0,1], p=[0.8, 0.2])
+
+
+		if is_same:
+			img2_name = random.choice(self.label_dict[label_1])
+		else:
+			while True:
+				label_2 = random.choice(range(len(self.label_dict)))
+				if label_2 != label_1:
+					break
+			img2_name = random.choice( self.label_dict[label_2])
+		
+		img1_path = osp.join(self.root, "train_aug_256x256", img1_name)
+		img2_path = osp.join(self.root, "train_aug_256x256", img2_name)
+
+		target1_path = osp.join(self.root, "train_uv_256x256", img1_name)
+		target2_path = osp.join(self.root, "train_uv_256x256", img2_name)
+
+		img1 = cv2.imread(img1_path)
+		img2 = cv2.imread(img2_path)
+		uv1  = np.load(target1_path)
+		uv2	 = np.load(target2_path)
+
+		sample = {'img1': img1, 'img2': img2, 'uv1': uv1, 'uv2': uv2}
+		if self.transform:
+			sample = self.transform(sample)
+		
+		img1, img2, uv1, uv2 = sample['img1'], sample['img2'], sample['uv1'], sample['uv2']
+		
+		return img1, img2, torch.from_numpy(np.array([is_same], dtype = np.float32)), uv1, uv2
+	
+	def __len__(self):
+		return len(self.lines)
+
 
 class ToTensor(object):
 	"""Convert ndarrays in sample to Tensors."""
@@ -112,7 +162,6 @@ class ToTensor(object):
 		img2 = img2.astype("float32") / 255.
 
 		return {'img1': torch.from_numpy(img1), 'img2': torch.from_numpy(img2), 'uv1': torch.from_numpy(uv1), 'uv2': torch.from_numpy(uv2)}
-
 
 class ToNormalize(object):
 	"""Normalized process on origin Tensors."""

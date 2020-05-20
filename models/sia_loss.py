@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+
 from skimage import io, transform
 import math
 import os
@@ -11,11 +12,80 @@ import cv2
 from math import sqrt
 from torch.autograd import Variable
 from models.io_utils import _load, _numpy_to_cuda, _numpy_to_tensor, _load_gpu
-
+from models.processor import face_mask_np, face_mask_mean_fix_rate, uv_kpt
 _to_tensor = _numpy_to_cuda
 
+def toTensor(image):
+    image = image.transpose((2, 0, 1))
+    image = torch.from_numpy(image)
+    return image
+
+#region Params
+weight_mask_np                          = io.imread("/home/viet/Projects/Pycharm/SPRNet/data/processing/Data/UV/uv_weight_mask.png").astype(float)
+weight_mask_np[weight_mask_np == 255]   = 256
+weight_mask_np                          = weight_mask_np / 16
+
+weight_mask = torch.from_numpy(weight_mask_np)
+face_mask = torch.from_numpy(face_mask_np)
+face_mask_3D = toTensor(np.repeat(np.reshape(face_mask_np, (256, 256, 1)), 3, -1))
+foreface_ind = np.array(np.where(face_mask_np > 0)).T
+if torch.cuda.is_available():
+    weight_mask = weight_mask.cuda().float()
+    face_mask = face_mask.cuda().float()
+    face_mask_3D = face_mask_3D.cuda().float()
+#endregion
+
 #region UV Loss
-def UVLoss(is_foreface=False, is_weighted=False, is_nme=False):
+class UVLoss(nn.Module):
+    def __init__(self, is_foreface=False, is_weighted=False, is_nme=False, rate=1.0):
+        super(UVLoss, self).__init__()
+        self.rate                           =   rate
+        self.weight_mask                    =   nn.Parameter(weight_mask.clone())
+        self.face_mask                      =   nn.Parameter(face_mask.clone())
+        self.weight_mask.requires_grad      =   False
+        self.face_mask.requires_grad        =   False
+        self.is_foreface                    =   is_foreface
+        self.is_weighted                    =   is_weighted
+        self.nme                            =   is_nme
+
+    def forward(self, y_pred, y_true):
+        if self.is_nme:
+            pred = y_pred[:, :, foreface_ind[:, 0], foreface_ind[:, 1]]
+            gt = y_true[:, :, foreface_ind[:, 0], foreface_ind[:, 1]]
+            for i in range(y_true.shape[0]):
+                pred[i, 2] = pred[i, 2] - torch.mean(pred[i, 2])
+                gt[i, 2] = gt[i, 2] - torch.mean(gt[i, 2])
+                dist = torch.mean(torch.norm(pred - gt, dim=1), dim=1)
+                left = torch.min(gt[:, 0, :], dim=1)[0]
+                right = torch.max(gt[:, 0, :], dim=1)[0]
+                top = torch.min(gt[:, 1, :], dim=1)[0]
+                bottom = torch.max(gt[:, 1, :], dim=1)[0]
+                bbox_size = torch.sqrt((right - left) * (bottom - top))
+                dist = dist / bbox_size
+                return torch.mean(dist) * self.rate
+
+        dist = torch.sqrt(torch.sum((y_true - y_pred) ** 2, 1))
+        if self.is_weighted:
+            dist = dist * self.weight_mask
+        if self.is_foreface:
+            dist = dist * (self.face_mask * face_mask_mean_fix_rate)
+        
+        loss = torch.mean(dist)
+        return loss * self.rate
+
+def getLossFunction(loss_func_name='SquareError'):
+    if loss_func_name == "RootSquareError" or loss_func_name == "RSE":
+        return UVLoss(is_foreface=False, is_weighted=False)
+    elif loss_func_name == "WeightedRootSquareError" or loss_func_name == "WRSE":
+        return UVLoss(is_foreface=False, is_weighted=True)
+    elif loss_func_name == "ForefaceRootSquareError" or loss_func_name == "FRSE":
+        return UVLoss(is_foreface=True, is_weighted=False)
+    elif loss_func_name == "ForefaceWeightedRootSquareError" or loss_func_name == "FWRSE":
+        return UVLoss(is_foreface=True, is_weighted=True)
+    elif loss_func_name == "NME":
+        return UVLoss(is_foreface=True, is_weighted=False, is_nme=True)
+    else:
+        return None
 #endregion
 
 #region UV Loss
@@ -88,6 +158,7 @@ def PRNError(is_2d=False, is_normalized=True, is_foreface=True, is_landmark=Fals
         return loss
 
     return templateError
+
 def getErrorFunction(error_func_name='NME'):
     if error_func_name == 'nme2d' or error_func_name == 'normalized mean error2d':
         return PRNError(is_2d=True, is_normalized=True, is_foreface=True)
@@ -98,73 +169,14 @@ def getErrorFunction(error_func_name='NME'):
     elif error_func_name == 'landmark3d' or error_func_name == 'normalized mean error3d':
         return PRNError(is_2d=False, is_normalized=True, is_foreface=False, is_landmark=True)
     elif error_func_name == 'gtlandmark2d' or error_func_name == 'normalized mean error3d':
-        return PRNError(is_2d=True, is_normalized=True, is_foreface=False, is_landmark=True,
-                        is_gt_landmark=True)
+        return PRNError(is_2d=True, is_normalized=True, is_foreface=False, is_landmark=True, is_gt_landmark=True)
     elif error_func_name == 'gtlandmark3d' or error_func_name == 'normalized mean error3d':
-        return PRNError(is_2d=False, is_normalized=True, is_foreface=False, is_landmark=True,
-                        is_gt_landmark=True)
+        return PRNError(is_2d=False, is_normalized=True, is_foreface=False, is_landmark=True, is_gt_landmark=True)
     else:
         print('unknown error:', error_func_name)
 #endregion
 ### Weight Mask Loss
-class WeightMaskLoss(nn.Module):
-    """
-        L2_Loss * Weight Mask
-    """
-
-    def __init__(self, mask_path):
-        super(WeightMaskLoss, self).__init__()
-        if os.path.exists(mask_path):
-            self.mask = cv2.imread(mask_path, 0)
-            self.mask = torch.from_numpy(preprocess(self.mask)).float().to("cuda")
-        else:
-            raise FileNotFoundError("Mask File Not Found! Please Check your Settings!")
-
-    def forward(self, output_l, target_l): #output_l, output_r, label, target_l, target_r):
-        result_l = torch.mean(torch.pow((output_l - target_l), 2), dim=1)
-        result_l = torch.mul(result_l, self.mask)
-
-        result_l = torch.sum(result_l)
-        result_l = result_l / (self.mask.size(1) ** 2)
-
-
-        result_r = torch.mean(torch.pow((output_r - target_r), 2), dim=1)
-        result_r = torch.mul(result_r, self.mask)
-
-        result_r = torch.sum(result_r)
-        result_r = result_r / (self.mask.size(1) ** 2)
-        # result = torch.mean(result)
-        is_right = np.random.choice([0, 1], p=[0.5, 0.5])
-        return result_l if is_right else result_r
 
 ### Shape Loss
-class UVLoss0(nn.Module):
-    """
-        
-    """
 
-    def __init__(self, mask_path, window_size=11, alpha=0.8, gauss='original'):
-        super(UVLoss0, self).__init__()
-        self.window_size = window_size
-        self.window      = None
-        self.channel     = None
 
-        self.gauss       = gauss
-        self.alpha       = alpha
-
-        if os.path.exists(mask_path):
-            self.mask = cv2.imread(mask_path, 0)
-            self.mask = torch.from_numpy(preprocess(self.mask)).float().to("cuda")
-        else:
-            raise FileNotFoundError("Mask File Not Found! Please Check your Settings!")
-
-    def forward(self, output_l, output_r, label, target_l, target_r):
-        (_, channel, _, _) = output_l.size()
-        self.channel = channel
-        
-        loss_ssim_1 = 10 * dfl_ssim(output_l, target_l, mask=self.mask, window_size=self.window_size, gauss=self.gauss)
-        loss_ssim_2 = 10 * dfl_ssim(output_r, target_r, mask=self.mask, window_size=self.window_size, gauss=self.gauss)
-        # result = torch.mean(result)
-        return loss_ssim_1 + loss_ssim_2
-
-### Constrain Identification Loss

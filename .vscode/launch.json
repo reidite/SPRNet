@@ -8,8 +8,13 @@
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
-            "program": "./data/processing/8_generate_posmap_300WLP.py",
-            "console": "integratedTerminal"
+            "program": "./train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "siamese_utils",
+				"verification",
+				"sia_loss"
+            ]
         }
     ]
 }
