@@ -182,8 +182,6 @@ def train(train_loader, model, criterion, optimizer, epoch, writer):
 		# if i % FLAGS["target_epoch"] == 0:
 		# 	print('[Step:%d | Epoch:%d], lr:%.6f, loss:%.6f' % (i, epoch, FLAGS["lr"], total_loss.data.cpu().numpy()))
 		# 	print('[Step:%d | Epoch:%d], lr:%.6f, loss:%.6f' % (i, epoch, FLAGS["lr"], total_loss.data.cpu().numpy()), file=open(FLAGS["log_file"] + 'contrastive_print.txt','a'))
-		
-		
 
 #endregion
 
