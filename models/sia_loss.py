@@ -25,10 +25,10 @@ weight_mask_np                          = io.imread("/home/viet/Projects/Pycharm
 weight_mask_np[weight_mask_np == 255]   = 256
 weight_mask_np                          = weight_mask_np / 16
 
-weight_mask = torch.from_numpy(weight_mask_np)
-face_mask = torch.from_numpy(face_mask_np)
-face_mask_3D = toTensor(np.repeat(np.reshape(face_mask_np, (256, 256, 1)), 3, -1))
-foreface_ind = np.array(np.where(face_mask_np > 0)).T
+weight_mask     = torch.from_numpy(weight_mask_np)
+face_mask       = torch.from_numpy(face_mask_np)
+face_mask_3D    = toTensor(np.repeat(np.reshape(face_mask_np, (256, 256, 1)), 3, -1))
+foreface_ind    = np.array(np.where(face_mask_np > 0)).T
 if torch.cuda.is_available():
     weight_mask = weight_mask.cuda().float()
     face_mask = face_mask.cuda().float()
@@ -46,22 +46,22 @@ class UVLoss(nn.Module):
         self.face_mask.requires_grad        =   False
         self.is_foreface                    =   is_foreface
         self.is_weighted                    =   is_weighted
-        self.nme                            =   is_nme
+        self.is_nme                         =   is_nme
 
     def forward(self, y_pred, y_true):
         if self.is_nme:
-            pred = y_pred[:, :, foreface_ind[:, 0], foreface_ind[:, 1]]
-            gt = y_true[:, :, foreface_ind[:, 0], foreface_ind[:, 1]]
+            pred    = y_pred[:, :, foreface_ind[:, 0], foreface_ind[:, 1]]
+            gt      = y_true[:, :, foreface_ind[:, 0], foreface_ind[:, 1]]
             for i in range(y_true.shape[0]):
-                pred[i, 2] = pred[i, 2] - torch.mean(pred[i, 2])
-                gt[i, 2] = gt[i, 2] - torch.mean(gt[i, 2])
-                dist = torch.mean(torch.norm(pred - gt, dim=1), dim=1)
-                left = torch.min(gt[:, 0, :], dim=1)[0]
-                right = torch.max(gt[:, 0, :], dim=1)[0]
-                top = torch.min(gt[:, 1, :], dim=1)[0]
-                bottom = torch.max(gt[:, 1, :], dim=1)[0]
-                bbox_size = torch.sqrt((right - left) * (bottom - top))
-                dist = dist / bbox_size
+                pred[i, 2]  = pred[i, 2] - torch.mean(pred[i, 2])
+                gt[i, 2]    = gt[i, 2] - torch.mean(gt[i, 2])
+                dist        = torch.mean(torch.norm(pred - gt, dim=1), dim=1)
+                left        = torch.min(gt[:, 0, :], dim=1)[0]
+                right       = torch.max(gt[:, 0, :], dim=1)[0]
+                top         = torch.min(gt[:, 1, :], dim=1)[0]
+                bottom      = torch.max(gt[:, 1, :], dim=1)[0]
+                bbox_size   = torch.sqrt((right - left) * (bottom - top))
+                dist        = dist / bbox_size
                 return torch.mean(dist) * self.rate
 
         dist = torch.sqrt(torch.sum((y_true - y_pred) ** 2, 1))
@@ -82,7 +82,7 @@ def getLossFunction(loss_func_name='SquareError'):
         return UVLoss(is_foreface=True, is_weighted=False)
     elif loss_func_name == "ForefaceWeightedRootSquareError" or loss_func_name == "FWRSE":
         return UVLoss(is_foreface=True, is_weighted=True)
-    elif loss_func_name == "NME":
+    elif loss_func_name == "NormalizedMeanError" or loss_func_name == "NME":
         return UVLoss(is_foreface=True, is_weighted=False, is_nme=True)
     else:
         return None

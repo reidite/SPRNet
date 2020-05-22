@@ -157,7 +157,7 @@ def run_posmap_300W_LP(bfm, image_path, param, save_uv_folder, save_img_folder, 
     # 5. save files
     # io.imsave('{}/{}'.format(save_folder, image_name), np.squeeze(cropped_image))
     np.save('{}/{}'.format(save_uv_folder, image_name.replace('jpg', 'npy')), uv_position_map)
-    io.imsave('{}/{}'.format(save_img_folder, image_name), img) 
+    # io.imsave('{}/{}'.format(save_img_folder, image_name), img)
 
     # --verify
     # import cv2
@@ -189,11 +189,10 @@ if __name__ == '__main__':
     # data_path = os.path.join(str(os.path.abspath(os.getcwd())), "..")
     data_path = "/home/viet/Projects/Pycharm/SPRNet/data/"
     file_list               = os.path.join(data_path, "..", "train.configs", "train_aug_120x120.list.train")
-    img_names_list          = Path(file_list).read_text().strip().split('\n')[0:100000]
+    img_names_list          = Path(file_list).read_text().strip().split('\n')[500000:]
     param_fp_gt             ='/home/viet/Projects/Pycharm/SPRNet/train.configs/param_all_norm.pkl'
     param_62d               = pickle.load(open(param_fp_gt,'rb'))
-    #miss 150000 200000
-    index = 0
+    index = 500000
     for img_name in tqdm(img_names_list):
         file_name   = os.path.splitext(img_name)[0]
         image_path  = os.path.join(data_path, "train_aug_120x120", file_name + ".jpg")

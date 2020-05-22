@@ -32,5 +32,6 @@
                     "ylabel",
                     "zhigh",
                     "zlow"
-                ]
+                ],
+                "git.ignoreLimitWarning": true
 }

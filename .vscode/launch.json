@@ -13,7 +13,8 @@
             "args": [
                 "siamese_utils",
 				"verification",
-				"sia_loss"
+                "sia_loss",
+                "resfcn.py"
             ]
         }
     ]

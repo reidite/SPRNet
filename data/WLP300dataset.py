@@ -15,7 +15,7 @@ import random
 
 def create_label_dict_train(path):
 	label_dict = defaultdict(list)
-	names_list = Path(path).read_text().strip().split('\n')[0:10]
+	names_list = Path(path).read_text().strip().split('\n')[:100]
 	for f_name in names_list:
 		f_s = f_name.split('\000')
 		label_dict[int(f_s[1])].append(f_s[0])
@@ -23,7 +23,7 @@ def create_label_dict_train(path):
 	return label_dict
 
 def split_label_train(path):
-	names_list = Path(path).read_text().strip().split('\n')[0:10]
+	names_list = Path(path).read_text().strip().split('\n')[:100]
 	img_name_nlabel = []
 	for img_name in names_list:
 		img_name_nlabel.append(img_name.split('\000')[0])
@@ -32,7 +32,7 @@ def split_label_train(path):
 
 def create_label_dict_val(path):
 	label_dict = defaultdict(list)
-	names_list = Path(path).read_text().strip().split('\n')
+	names_list = Path(path).read_text().strip().split('\n')[:100]
 	for f_name in names_list:
 		f_s = f_name.split('\000')
 		label_dict[int(f_s[1])].append(f_s[0])
@@ -40,7 +40,7 @@ def create_label_dict_val(path):
 	return label_dict
 
 def split_label_val(path):
-	names_list = Path(path).read_text().strip().split('\n')
+	names_list = Path(path).read_text().strip().split('\n')[:100]
 	img_name_nlabel = []
 	for img_name in names_list:
 		img_name_nlabel.append(img_name.split('\000')[0])
@@ -53,8 +53,6 @@ class SiaTrainDataset(data.Dataset):
 		self.transform 	= transform
 		self.label_dict = create_label_dict_train(filelists)
 		self.lines 		= split_label_train(filelists)
-		self.filelists	= Path(filelists).read_text().strip().split('\n')[0:100000]
-		
 
 	def __getitem__(self, index):
 		label_1 = random.choice(range(len(self.label_dict)))
@@ -71,16 +69,20 @@ class SiaTrainDataset(data.Dataset):
 					break
 			img2_name = random.choice( self.label_dict[label_2])
 		
-		img1_path = osp.join(self.root, "train_aug_256x256", img1_name)
-		img2_path = osp.join(self.root, "train_aug_256x256", img2_name)
+		img1_path = osp.join(self.root_dir, "train_aug_120x120", img1_name)
+		img2_path = osp.join(self.root_dir, "train_aug_120x120", img2_name)
 
-		target1_path = osp.join(self.root, "train_uv_256x256", img1_name)
-		target2_path = osp.join(self.root, "train_uv_256x256", img2_name)
+		target1_path = osp.join(self.root_dir, "train_uv_256x256", img1_name.replace('jpg', 'npy'))
+		target2_path = osp.join(self.root_dir, "train_uv_256x256", img2_name.replace('jpg', 'npy'))
 
 		img1 = cv2.imread(img1_path)
 		img2 = cv2.imread(img2_path)
+
+		img1 = cv2.resize(img1, None, fx=32/15,fy=32/15,interpolation = cv2.INTER_CUBIC)
+		img2 = cv2.resize(img2, None, fx=32/15,fy=32/15,interpolation = cv2.INTER_CUBIC)
+		
 		uv1  = np.load(target1_path)
-		uv2	 = np.load(target2_path)
+		uv2  = np.load(target2_path)
 
 		sample = {'img1': img1, 'img2': img2, 'uv1': uv1, 'uv2': uv2}
 		if self.transform:
@@ -99,7 +101,6 @@ class SiaValDataset(data.Dataset):
 		self.transform = transform
 		self.label_dict = create_label_dict_val(filelists)
 		self.lines = split_label_val(filelists)
-		self.filelists	= Path(filelists).read_text().strip().split('\n')[0:100000]
 		
 
 	def __getitem__(self, index):
@@ -117,14 +118,18 @@ class SiaValDataset(data.Dataset):
 					break
 			img2_name = random.choice( self.label_dict[label_2])
 		
-		img1_path = osp.join(self.root, "train_aug_256x256", img1_name)
-		img2_path = osp.join(self.root, "train_aug_256x256", img2_name)
+		img1_path = osp.join(self.root_dir, "train_aug_120x120", img1_name)
+		img2_path = osp.join(self.root_dir, "train_aug_120x120", img2_name)
 
-		target1_path = osp.join(self.root, "train_uv_256x256", img1_name)
-		target2_path = osp.join(self.root, "train_uv_256x256", img2_name)
+		target1_path = osp.join(self.root_dir, "train_uv_256x256", img1_name.replace('jpg', 'npy'))
+		target2_path = osp.join(self.root_dir, "train_uv_256x256", img2_name.replace('jpg', 'npy'))
 
 		img1 = cv2.imread(img1_path)
 		img2 = cv2.imread(img2_path)
+
+		img1 = cv2.resize(img1, None, fx=32/15,fy=32/15,interpolation = cv2.INTER_CUBIC)
+		img2 = cv2.resize(img2, None, fx=32/15,fy=32/15,interpolation = cv2.INTER_CUBIC)
+
 		uv1  = np.load(target1_path)
 		uv2	 = np.load(target2_path)
 
