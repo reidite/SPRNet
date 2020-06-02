@@ -60,23 +60,31 @@ def process_uv(uv_coords, uv_h = 256, uv_w = 120):
 def show_mesh(img_path, vertices, keypoint_index):
     img = cv2.imread(img_path)
 
-    img = cv2.resize(img, None, fx=32/15,fy=32/15,interpolation = cv2.INTER_CUBIC)
-    x, y, z = vertices
+    zoom  =  2
+
+    img = cv2.resize(img, None, fx=32/15 * zoom,fy=32/15 * zoom,interpolation = cv2.INTER_CUBIC)
+
+    cv2.imshow("origin",img)
+    x, y, z = vertices * zoom
     for i in range(0, x.shape[0], 1):
         if i in keypoint_index:
-            img = cv2.circle(img, (int(x[i]),256 - int(y[i])), 4, (255, 255, 255), -1)
+            img = cv2.circle(img, (int(x[i]),256 * zoom - int(y[i])), 4, (255, 255, 255), -1)
         else:
-            img = cv2.circle(img, (int(x[i]),256 - int(y[i])), 1, (255, 0, 130 - z[i]), -1)
+            img = cv2.circle(img, (int(x[i]),256 * zoom - int(y[i])), 1, (255, 0, 130 - z[i]), -1)
     cv2.imshow("3d_point_scatter",img)
     cv2.waitKey()
 
 def show_uv_mesh(img_path, uv, keypoint):
     img = cv2.imread(img_path)
-    x, y, z = uv.transpose(2, 0, 1).reshape(3, -1)
-    img = cv2.resize(img, None, fx=32/15,fy=32/15,interpolation = cv2.INTER_CUBIC)
+    # H W 3
+    # 3 (W*H)
+    zoom  =  2
+
+    x, y, z = uv.transpose(2, 0, 1).reshape(3, -1) * zoom
+    img = cv2.resize(img, None, fx=32/15 * zoom, fy=32/15 * zoom,interpolation = cv2.INTER_CUBIC)
     for i in range(0, x.shape[0], 1):
         img = cv2.circle(img, (int(x[i]), int(y[i])), 1, (255, 0, 0), -1)
-    x, y, z = keypoint.transpose().astype(np.int32)
+    x, y, z = keypoint.transpose().astype(np.int32) * zoom
     for i in range(0, x.shape[0], 1):
         img = cv2.circle(img, (int(x[i]), int(y[i])), 4, (255, 255, 255), -1)
     # res = cv2.resize(img, None, fx=3,fy=3,interpolation = cv2.INTER_CUBIC)
@@ -88,6 +96,7 @@ def run_posmap_300W_LP(bfm, image_path, param, save_uv_folder, save_img_folder, 
     image_name = image_path.strip().split('/')[-1]
     img = io.imread(image_path)
     img = cv2.resize(img, None, fx=32/15,fy=32/15, interpolation = cv2.INTER_CUBIC)
+    print(img.shape)
     image = img/255
     [h, w, c] = image.shape
 
@@ -102,17 +111,18 @@ def run_posmap_300W_LP(bfm, image_path, param, save_uv_folder, save_img_folder, 
     # s = pose_para[-1, 0]
     # angles = pose_para[:3, 0]
     # t = pose_para[3:6, 0]
-    # transformed_vertices = bfm.transform_3ddfa(vertices, s, angles, t)
-    # projected_vertices = transformed_vertices.copy() # using stantard camera & orth projection as in 3DDFA
+    # transformed_vertices  = bfm.transform_3ddfa(vertices, s, angles, t)
+    # projected_vertices    = transformed_vertices.copy() # using stantard camera & orth projection as in 3DDFA
 
     vertices = reconstruct_vertex(param, dense = True).astype(np.float32) * 32 / 15
     projected_vertices = vertices.transpose()
     image_vertices = projected_vertices.copy()
     image_vertices[:,1] = h - image_vertices[:,1] - 1
-
+    
     # 3. crop image with key points
     # image_vertices [53215, 3]
     kpt = image_vertices[bfm.kpt_ind, :].astype(np.int32)
+    # show_mesh(image_path, vertices, bfm.kpt_ind)
     # kpt [68: 3]
     left = np.min(kpt[:, 0])
     # min x = float32
@@ -152,11 +162,11 @@ def run_posmap_300W_LP(bfm, image_path, param, save_uv_folder, save_img_folder, 
     uv_position_map = mesh.render.render_colors(uv_coords, bfm.full_triangles, position, uv_h, uv_w, c = 3)
     
     # show_mesh(image_path, vertices, bfm.kpt_ind)
-    # kpt = uv_position_map[uv_kpt_ind[1,:].astype(np.int32), uv_kpt_ind[0,:].astype(np.int32), :]
-    # show_uv_mesh(image_path, uv_position_map, kpt)
+    kpt = uv_position_map[uv_kpt_ind[1,:].astype(np.int32), uv_kpt_ind[0,:].astype(np.int32), :]
+    show_uv_mesh(image_path, uv_position_map, kpt)
     # 5. save files
     # io.imsave('{}/{}'.format(save_folder, image_name), np.squeeze(cropped_image))
-    np.save('{}/{}'.format(save_uv_folder, image_name.replace('jpg', 'npy')), uv_position_map)
+    # np.save('{}/{}'.format(save_uv_folder, image_name.replace('jpg', 'npy')), uv_position_map)
     # io.imsave('{}/{}'.format(save_img_folder, image_name), img)
 
     # --verify
@@ -165,8 +175,8 @@ def run_posmap_300W_LP(bfm, image_path, param, save_uv_folder, save_img_folder, 
     # io.imsave('{}/{}'.format(save_folder, image_name.replace('.jpg', '_tex.jpg')), np.squeeze(uv_texture_map_rec))
 
 if __name__ == '__main__':
-    save_uv_folder = os.path.join(str(os.path.abspath(os.getcwd())), "..", "train_uv_256x256")
-    save_img_folder = os.path.join(str(os.path.abspath(os.getcwd())), "..", "train_aug_256x256")
+    save_uv_folder  = os.path.join("/media/viet/Vincent/SPRNet", "train_uv_256x256")
+    save_img_folder = os.path.join("/media/viet/Vincent/SPRNet", "train_im_256x256")
     if not os.path.exists(save_uv_folder):
         os.mkdir(save_uv_folder)
 
@@ -189,14 +199,15 @@ if __name__ == '__main__':
     # data_path = os.path.join(str(os.path.abspath(os.getcwd())), "..")
     data_path = "/home/viet/Projects/Pycharm/SPRNet/data/"
     file_list               = os.path.join(data_path, "..", "train.configs", "train_aug_120x120.list.train")
-    img_names_list          = Path(file_list).read_text().strip().split('\n')[500000:]
+    img_names_list          = Path(file_list).read_text().strip().split('\n')
     param_fp_gt             ='/home/viet/Projects/Pycharm/SPRNet/train.configs/param_all_norm.pkl'
     param_62d               = pickle.load(open(param_fp_gt,'rb'))
-    index = 500000
+    index = 0
     for img_name in tqdm(img_names_list):
         file_name   = os.path.splitext(img_name)[0]
-        image_path  = os.path.join(data_path, "train_aug_120x120", file_name + ".jpg")
+        image_path  = os.path.join("/home/viet/Data/train_aug_120x120", file_name + ".jpg")
         param       = param_62d[index]
+
         run_posmap_300W_LP(bfm, image_path, param, save_uv_folder, save_img_folder)
         index       = index + 1
     # for img in glob.glob(os.path.join(data_path, "shape", "vertex_gt", "*"), recursive=True):

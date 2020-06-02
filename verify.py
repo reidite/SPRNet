@@ -1,57 +1,114 @@
-import torchvision
+import os
+import numpy as np
+import time
+import logging
 import torch
 import torch.nn as nn
-import torch.utils.data as data
+import torchvision
 import torchvision.transforms as transforms
 import torch.backends.cudnn as cudnn
-import time
-import numpy as np
+import matplotlib.pylab as plt
 import torch.nn.functional as F
 
-from models.siamese_utils import Normalize, LFW_Pairs_Dataset, DDFA_Pairs_Dataset
-from utils.verification import calculate_roc, calculate_accuracy, compute_roc, generate_roc_curve
-from models.resfcn256 import ResFCN256
+from torch.utils.tensorboard import SummaryWriter
+from pathlib import Path
+from torch.utils.data import DataLoader
+from data.WLP300dataset import SiaTrainDataset, SiaValDataset, ToTensor, ToNormalize
 
+from models.sia_loss import *
+from models.resfcn import ResFCN256
+from models.module import *
 import scipy.io as sio
 import os.path as osp
 import os
+import cv2
 import matplotlib.pylab as plt
 
-class sia_net(nn.Module):
-    def __init__(self , model):
-        super(sia_net, self).__init__()
-        self.fc1 = nn.Sequential(nn.Sequential(*list(model.children())[:-2]), nn.AdaptiveAvgPool2d(1))
+uv_kpt_ind = np.loadtxt("/home/viet/Projects/Pycharm/SPRNet/data/processing/Data/UV/uv_kpt_ind.txt").astype(np.int32)
 
-        self.fc1_0 = nn.Sequential(
-                nn.Linear(2048, 1024),
-                nn.Linear(1024, 512))
+class SPRNet(nn.Module):
+	def __init__(self, model):
+		super(SPRNet, self).__init__()
+		self.fw	= nn.Sequential(*list(model.children())[:-1])
 
-        self.fc1_1 = nn.Sequential(nn.Linear(2048, 62))
-        
-    def forward_once(self, x):
-        x = self.fc1(x)
+	def forward(self, input_l, input_r):
+		uv_l = self.fw(input_l)
+		uv_r = self.fw(input_r)
 
-        x = x.view(x.size()[0], -1) 
+		return uv_l, uv_r    
+class InitLoss(nn.Module):
+    def __init__(self):
+        super(InitLoss, self).__init__()
+        self.criterion = getLossFunction('FWRSE')
+        self.metrics = getLossFunction('NME')
 
-        feature = self.fc1_0(x)     #feature
+    def forward(self, posmap, gt_posmap):
+        loss_posmap = self.criterion(gt_posmap, posmap)
+        total_loss = loss_posmap
+        metrics_posmap = self.metrics(gt_posmap, posmap)
+        return total_loss, metrics_posmap
 
-        param = self.fc1_1(x)
+class InitPRN2(nn.Module):
+    def __init__(self):
+        super(InitPRN2, self).__init__()
+        self.feature_size = 16
+        feature_size = self.feature_size
+        self.layer0 = Conv2d_BN_AC(in_channels=3, out_channels=feature_size, kernel_size=4, stride=1, padding=1)  # 256 x 256 x 16
+        self.encoder = nn.Sequential(
+            PRNResBlock(in_channels=feature_size, out_channels=feature_size * 2, kernel_size=4, stride=2, with_conv_shortcut=True),  # 128 x 128 x 32
+            PRNResBlock(in_channels=feature_size * 2, out_channels=feature_size * 2, kernel_size=4, stride=1, with_conv_shortcut=False),  # 128 x 128 x 32
+            PRNResBlock(in_channels=feature_size * 2, out_channels=feature_size * 4, kernel_size=4, stride=2, with_conv_shortcut=True),  # 64 x 64 x 64
+            PRNResBlock(in_channels=feature_size * 4, out_channels=feature_size * 4, kernel_size=4, stride=1, with_conv_shortcut=False),  # 64 x 64 x 64
+            PRNResBlock(in_channels=feature_size * 4, out_channels=feature_size * 8, kernel_size=4, stride=2, with_conv_shortcut=True),  # 32 x 32 x 128
+            PRNResBlock(in_channels=feature_size * 8, out_channels=feature_size * 8, kernel_size=4, stride=1, with_conv_shortcut=False),  # 32 x 32 x 128
+            PRNResBlock(in_channels=feature_size * 8, out_channels=feature_size * 16, kernel_size=4, stride=2, with_conv_shortcut=True),  # 16 x 16 x 256
+            PRNResBlock(in_channels=feature_size * 16, out_channels=feature_size * 16, kernel_size=4, stride=1, with_conv_shortcut=False),  # 16 x 16 x 256
+            PRNResBlock(in_channels=feature_size * 16, out_channels=feature_size * 32, kernel_size=4, stride=2, with_conv_shortcut=True),  # 8 x 8 x 512
+            PRNResBlock(in_channels=feature_size * 32, out_channels=feature_size * 32, kernel_size=4, stride=1, with_conv_shortcut=False),  # 8 x 8 x 512
+        )
+        self.decoder = nn.Sequential(
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 32, out_channels=feature_size * 32, kernel_size=4, stride=1),  # 8 x 8 x 512
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 32, out_channels=feature_size * 16, kernel_size=4, stride=2),  # 16 x 16 x 256
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 16, out_channels=feature_size * 16, kernel_size=4, stride=1),  # 16 x 16 x 256
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 16, out_channels=feature_size * 16, kernel_size=4, stride=1),  # 16 x 16 x 256
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 16, out_channels=feature_size * 8, kernel_size=4, stride=2),  # 32 x 32 x 128
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 8, out_channels=feature_size * 8, kernel_size=4, stride=1),  # 32 x 32 x 128
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 8, out_channels=feature_size * 8, kernel_size=4, stride=1),  # 32 x 32 x 128
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 8, out_channels=feature_size * 4, kernel_size=4, stride=2),  # 64 x 64 x 64
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 4, out_channels=feature_size * 4, kernel_size=4, stride=1),  # 64 x 64 x 64
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 4, out_channels=feature_size * 4, kernel_size=4, stride=1),  # 64 x 64 x 64
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 4, out_channels=feature_size * 2, kernel_size=4, stride=2),
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 2, out_channels=feature_size * 2, kernel_size=4, stride=1),
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 2, out_channels=feature_size * 1, kernel_size=4, stride=2),
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 1, out_channels=feature_size * 1, kernel_size=4, stride=1),
+            ConvTranspose2d_BN_AC(in_channels=feature_size * 1, out_channels=3, kernel_size=4, stride=1),
+            ConvTranspose2d_BN_AC(in_channels=3, out_channels=3, kernel_size=4, stride=1),
+            ConvTranspose2d_BN_AC(in_channels=3, out_channels=3, kernel_size=4, stride=1, activation=nn.Tanh())
+        )
+        self.loss = InitLoss()
 
-        return feature, param
-    
-    def forward(self, input_l, input_r):
-        feature_l, param_l = self.forward_once(input_l)
-        feature_r, param_r = self.forward_once(input_r)
+    def forward(self, img, target):
+        x = self.layer0(img)
+        x = self.encoder(x)
+        x = self.decoder(x)
+        loss, metrics = self.loss(x, target)
+        return loss, metrics, x
 
-        return feature_l, feature_r, param_l, param_r
+def load_SPRNET(checkpoint):
+    visible_gpus = '0,1,2,3'
+    gpus = visible_gpus.split(',')
+    visible_devices = [int(i) for i in gpus]
+    prnet = InitPRN2()
+    device_ids = [0]
+    torch.cuda.set_device(device_ids[0])      
+    prnet = nn.DataParallel(prnet, device_ids=device_ids)
+    prnet.to(torch.device("cuda:" + gpus[0] if torch.cuda.is_available() else "cpu"))
+    prnet.module.load_state_dict(torch.load(checkpoint, map_location='cuda:0'))
+    model = SPRNet(prnet)
 
-def load_SPRNET():
-	prnet = torchvision.models.resnet50()
-	model = sia_net(prnet)
-	
-	return model
+    return model
 
-#region TOOLKIT
+
 def transform_for_infer(image_shape):
     return transforms.Compose(
         [transforms.Resize(image_shape),
@@ -60,75 +117,71 @@ def transform_for_infer(image_shape):
         transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])]
     )
 
-def sia_extract_feature(checkpoint_fp, root, pairs_txt, log_dir, device_ids = [0], batch_size = 32, num_workers = 8):
-    map_location = {f'cuda:{i}': 'cuda:0' for i in range(8)}
-    checkpoint = torch.load(checkpoint_fp, map_location=map_location)['state_dict']
-    torch.cuda.set_device(device_ids[0])
-    model = load_SPRNET()
-    model = nn.DataParallel(model, device_ids=device_ids).cuda()
-    model.load_state_dict(checkpoint)
-    dataset = DDFA_Pairs_Dataset(root, pairs_txt, transform=transforms.Compose([transforms.ToTensor(), Normalize(mean=127.5, std=128)]))
-    data_loader = data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-    cudnn.benchmark = True
-    model.eval()
 
-    # 6000 x 512
-    embeddings_l = []
-    embeddings_r = []
-    pairs_match = []
+def SPRNET_validate_ddfa(checkpoint_fp, root, log_dir, device_ids = [0], batch_size = 16, num_workers = 4):
+    # checkpoint = torch.load(checkpoint_fp, map_location=map_location)                  
+    model = load_SPRNET(checkpoint_fp)    #get a model explain or document
+    # model = nn.DataParallel(model, device_ids=device_ids).cuda()
+    # model.load_state_dict(checkpoint)
+    data_dir 		= "/media/viet/Vincent/SPRNet"
+    dataset 	= SiaValDataset(
+		root_dir  		= data_dir,
+		filelists 		= os.path.join(root, "train.configs", "label_train_aug_120x120.list.val"),
+		transform 		= transforms.Compose([ToTensor()])
+	)
+
+    data_loader = DataLoader(
+		dataset, 
+		batch_size=16, 
+		num_workers=4,
+		shuffle=False, 
+		pin_memory=True, 
+		drop_last=True
+	)
+    cudnn.benchmark = True   
+    model.eval()   
+
     with torch.no_grad():
-        for i, (inputs_l, inputs_r, matches) in enumerate(data_loader):
-            inputs_l = inputs_l.cuda()
-            inputs_r = inputs_r.cuda()
-            feature_l, feature_r, param_l, param_r = model(inputs_l, inputs_r)
-            param_l = param_l[:,12:52]
-            param_r = param_r[:,12:52]
+        for i, (img_l, img_r, label, target_l, target_r) in enumerate(data_loader):
+            target_l.requires_grad  = False
+            target_r.requires_grad  = False
+            label.requires_grad     = False
 
-            param_l = param_l.div(torch.norm(param_l, p=2, dim=1, keepdim=True).expand_as(param_l))
-            param_r = param_r.div(torch.norm(param_r, p=2, dim=1, keepdim=True).expand_as(param_r))
+            label = label.cuda(non_blocking = True)
 
-            for j in range(feature_l.shape[0]):
-                feature_l_np = feature_l[j].cpu().numpy().flatten()
-                feature_r_np = feature_r[j].cpu().numpy().flatten()
-                param_l_np = param_l[j].cpu().numpy().flatten()
-                param_r_np = param_r[j].cpu().numpy().flatten()
-                matches_np = matches[j].cpu().numpy().flatten()
+            target_l = target_l.cuda(non_blocking=True)
+            target_r = target_r.cuda(non_blocking=True)
+            uv_l, uv_r = model(img_l, img_r)
+            for i in range(16):
+                show_img = img_l[i].cpu().numpy().transpose(1, 2, 0)
+                show_uv  = uv_l[i].cpu().numpy().transpose(1, 2, 0)
 
-                embeddings_l.append(feature_l_np)
-                embeddings_r.append(feature_r_np)
-                pairs_match.append(matches_np)
+                # kpt_r = uv_r[uv_kpt_ind[1,:].astype(np.int32), uv_kpt_ind[0,:].astype(np.int32), :]
+                show_img_img = 255.0 * (show_img - np.min(show_img))/np.ptp(show_img).astype(int)
+                show_img_uv  = show_uv * 280.0
+                kpt_l = show_img_uv[uv_kpt_ind[1,:].astype(np.int32), uv_kpt_ind[0,:].astype(np.int32), :]
+                show_uv_mesh(show_img, show_img_uv, kpt_l)
+                # show_uv_mesh(image_path, uv_position_map, kpt)
+            return
 
-    embeddings_l    = np.array(embeddings_l)
-    embeddings_r    = np.array(embeddings_r)
-    pairs_match     = np.array(pairs_match)
 
-    pairs_match = pairs_match.reshape(6000)
-    thresholds = np.arange(0, 4, 0.01)
-
-    tpr, fpr, accuracy, best_thresholds = calculate_roc(thresholds, embeddings_l, embeddings_r, pairs_match, nrof_folds = 10, pca = 0)
-
-    generate_roc_curve(fpr, tpr, log_dir)
-    diff = np.subtract(embeddings_l, embeddings_r)
-    dist = np.sum(np.square(diff), 1)
-
-    return tpr, fpr, accuracy, best_thresholds
-
-def imshow(img, text=None):
-    npimg = img.numpy()
-    plt.axis("off")
-    if text:
-        plt.text(75, 8, text, style='italic',fontweight='bold', bbox={'facecolor':'white', 'alpha':0.8, 'pad':10})
-    plt.imshow(np.transpose(npimg, (1,2,0)))
-    plt.show()
-#endregion
+def show_uv_mesh(img, uv, keypoint):
+    img = cv2.resize(img, (256,256))
+    x, y, z = uv.transpose(2, 0, 1).reshape(3, -1)
+    # img = cv2.resize(img, None, fx=32/15,fy=32/15,interpolation = cv2.INTER_CUBIC)
+    for i in range(0, x.shape[0], 1):
+        img = cv2.circle(img, (int(x[i]), int(y[i])), 1, (255, 0, 0), -1)
+    x, y, z = keypoint.transpose().astype(np.int32)
+    for i in range(0, x.shape[0], 1):
+        img = cv2.circle(img, (int(x[i]), int(y[i])), 4, (255, 255, 255), -1)
+    # res = cv2.resize(img, None, fx=3,fy=3,interpolation = cv2.INTER_CUBIC)
+    cv2.imshow("uv_point_scatter",img)
+    cv2.waitKey()
 
 if __name__ == '__main__':
-    path            = osp.dirname(osp.abspath(__file__))
-    checkpoint_fp   = osp.join(path, "training_debug","logs", "")
-    root_ddfa       = osp.join(path, "data", "train_aug_120x120")
-    pairs_txt       = osp.join(path, "test", "pairs_ddfa.txt")
-    log_dir         = osp.join(path, "test", "cc.png")
+    ################## DDFA #####################
+    checkpoint_fp = "/home/viet/Projects/Pycharm/SPRNet/train_log/best.pth"
+    root = "/home/viet/Projects/Pycharm/SPRNet/"
+    log_dir = "/home/viet/Projects/Git/Siamese-3DFace/recognition/"
 
-    tpr, fpr, accuracy, best_thresholds = sia_extract_feature(checkpoint_fp, root_ddfa, pairs_txt, log_dir)
-    mean_acc = np.mean(accuracy)
-    print(mean_acc)
+    SPRNET_validate_ddfa(checkpoint_fp, root, log_dir)

@@ -24,17 +24,18 @@ def show_uv_mesh(img_path, uv, keypoint):
 
 if __name__ == "__main__":
     file_path = (str(os.path.abspath(os.getcwd())))
-    data_list_val = os.path.join(file_path, "train.configs", "train_aug_120x120.list.train")
-    img_names_list = Path(data_list_val).read_text().strip().split('\n')[120:130]
+    data_list_val = os.path.join(file_path, "train.configs", "train_aug_120x120.list.val")
+    img_names_list = Path(data_list_val).read_text().strip().split('\n')
+    print(len(img_names_list))
     # data_index = 200000
     # file_name   = os.path.splitext(img_names_list[data_index])[0]
     # uv_kpt_ind = np.loadtxt("/home/viet/Projects/Pycharm/SPRNet/data/processing/Data/UV/uv_kpt_ind.txt").astype(np.int32)
     # uv_position_map = np.load(os.path.join(file_path, "data", "train_uv_256x256", file_name + ".npy")).astype(np.float32)
     # kpt = uv_position_map[uv_kpt_ind[1,:].astype(np.int32), uv_kpt_ind[0,:].astype(np.int32), :]
     # show_uv_mesh(os.path.join(file_path, "data", "train_aug_120x120", file_name + ".jpg"), uv_position_map, kpt)
-    for img_name in tqdm(img_names_list):
-        file_name   = os.path.splitext(img_name)[0]
-        cmd         = "cp " + str(os.path.join(file_path, "data", "train_uv_256x256", file_name + ".npy")) + " " + str(os.path.join(file_path, "test_rotation", "uv_256x256", file_name + ".npy"))
-        os.system(cmd)
-        cmd         = "cp " + str(os.path.join(file_path, "data", "train_aug_120x120", file_name + ".jpg")) + " " + str(os.path.join(file_path, "test_rotation", "aug_120x120", file_name + ".jpg"))
-        os.system(cmd)
+    # for img_name in tqdm(img_names_list):
+    #     file_name   = os.path.splitext(img_name)[0]
+    #     cmd         = "cp " + str(os.path.join(file_path, "data", "train_uv_256x256", file_name + ".npy")) + " " + str(os.path.join(file_path, "test_rotation", "uv_256x256", file_name + ".npy"))
+    #     os.system(cmd)
+    #     cmd         = "cp " + str(os.path.join(file_path, "data", "train_aug_120x120", file_name + ".jpg")) + " " + str(os.path.join(file_path, "test_rotation", "aug_120x120", file_name + ".jpg"))
+    #     os.system(cmd)

@@ -8,13 +8,9 @@
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
-            "program": "./train.py",
+            "program": "./plot_3D_inter.py",
             "console": "integratedTerminal",
             "args": [
-                "siamese_utils",
-				"verification",
-                "sia_loss",
-                "resfcn.py"
             ]
         }
     ]

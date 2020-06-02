@@ -7,6 +7,7 @@
                     "SPRNET",
                     "Tnorm",
                     "Vnorm",
+                    "conv",
                     "fprs",
                     "imshow",
                     "issame",
