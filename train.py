@@ -14,22 +14,22 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from pathlib import Path
 from torch.utils.data import DataLoader
-from data.WLP300dataset import SiaTrainDataset, SiaValDataset, ToTensor
+from data.dataset import SiaTrainDataset, SiaValDataset, ToTensor
 
 from models.sia_loss import *
 from models.resfcn import ResFCN256
 
 
 FLAGS = {   
-			"start_epoch": 0,
-			"target_epoch": 5,
+			"start_epoch": 1,
+			"target_epoch": 80,
 			"device": "cuda",
-			"batch_size": 50,
+			"batch_size": 64,
 			"save_interval": 5,
-			"base_lr": 0.001,
-			"momentum" : 0.9,
-			"weight_decay": 5e-4,
-			"milestones" : 30,
+			"base_lr": 2e-4,
+			"momentum" : 0.95,
+			"weight_decay": 5e-5,
+			"milestones" : 15,
 			"devices_id" : [0],
 			"workers" : 8,
 			"log_file" : "./train_log/",
@@ -66,7 +66,7 @@ class InitLoss():
 	
 	def forward(self, posmap, gt_posmap):
 		loss_posmap		=	self.criterion(gt_posmap, posmap)
-		metrics_posmap 	= 	self.metrics(gt_posmap, posmap)
+		metrics_posmap 		= 	self.metrics(gt_posmap, posmap)
 		return loss_posmap, metrics_posmap
 
 def load_SPRNET():
@@ -117,7 +117,7 @@ def plt_imshow(img, one_channel = False):
 
 #region ADJUST LEARNING RATE	
 def adjust_lr(optimizer, base_lr, ep, total_ep, start_decay_at_ep):
-	assert ep >= 0, "Current epoch number should be >= 0"
+	assert ep >= 1, "Current epoch number should be >= 0"
 	
 	if ep < start_decay_at_ep:
 		return
@@ -125,7 +125,7 @@ def adjust_lr(optimizer, base_lr, ep, total_ep, start_decay_at_ep):
 	global lr
 	lr = base_lr
 	for param_group in optimizer.param_groups:
-		lr = (base_lr*(0.001**(float(ep + 1 - start_decay_at_ep)/(total_ep + 1 - start_decay_at_ep))))
+		lr = (base_lr*(0.0002**(float(ep + 1 - start_decay_at_ep)/(total_ep + 1 - start_decay_at_ep))))
 		param_group['lr'] = lr
 
 #endregion
@@ -220,7 +220,11 @@ def main(root_dir):
 	model 	= load_SPRNET()
 	torch.cuda.set_device(FLAGS["devices_id"][0])
 	model	= nn.DataParallel(model, device_ids=FLAGS["devices_id"]).cuda()
-
+	
+	if FLAGS["resume"]:
+		pretrained_weights = torch.load(os.path.join(root_dir, "train_log", "_checkpoint_epoch_19.pth.tar"))
+		model.load_state_dict(pretrained_weights['state_dict'])
+		FLAGS["start_epoch"] = int(pretrained_weights['epoch']) + 1
 	###	Step2: Loss and optimization method
 	criterion = InitLoss()
 	optimizer = torch.optim.SGD(model.parameters(),
@@ -230,18 +234,18 @@ def main(root_dir):
 								nesterov 		= True)
 
 	###	Step3: Load 300WLP Augmentation Dataset
-	data_dir 		= "/media/viet/Vincent/SPRNet"
+	data_dir 		= os.path.join(root_dir, "data")
 	train_dataset 	= SiaTrainDataset(
 		root_dir  		= data_dir,
 		filelists 		= os.path.join(root_dir, "train.configs", "label_train_aug_120x120.list.train"),
-		augmentation	= False,
+		augmentation	= True,
 		transform 		= transforms.Compose([ToTensor()])
 	)
 
 	val_dataset 	= SiaValDataset(
 		root_dir  		= data_dir,
 		filelists 		= os.path.join(root_dir, "train.configs", "label_train_aug_120x120.list.val"),
-		augmentation	= False,
+		augmentation	= True,
 		transform 		= transforms.Compose([ToTensor()])
 	)
 
@@ -250,7 +254,7 @@ def main(root_dir):
 		batch_size 		= FLAGS["batch_size"], 
 		num_workers		= FLAGS["workers"],
 		shuffle			= True, 
-		pin_memory		= True, 
+		pin_memory		= True,
 		drop_last		= True
 	)
 
@@ -284,11 +288,12 @@ def main(root_dir):
 		##	Validate
 		validate(val_loader, model, criterion, optimizer, epoch, val_writer)
 
-	## Step5: Save model parameters
-	filename = f'{snapshot}_checkpoint_epoch_{epoch}.pth.tar'
-	save_checkpoint({
+		## Step5: Save model parameters
+		if (epoch) % 5 == 0:
+			filename = f'{snapshot}_checkpoint_epoch_{epoch}.pth.tar'
+			save_checkpoint({
 						'epoch':epoch,
-						'state_dict':model.state_dict()																																																																																
+						'state_dict':model.state_dict()																																																																															
 					},
 					filename				
 					)

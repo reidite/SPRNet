@@ -2,6 +2,7 @@
                  "python.linting.enabled": true,
                 "python.pythonPath": "/home/viet/anaconda3/bin/python",
                 "cSpell.words": [
+                    "ALFW",
                     "FWRSE",
                     "Illum",
                     "SPRNET",

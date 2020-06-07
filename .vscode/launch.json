@@ -8,7 +8,7 @@
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
-            "program": "./plot_3D_inter.py",
+            "program": "./data/dataset.py",
             "console": "integratedTerminal",
             "args": [
             ]
