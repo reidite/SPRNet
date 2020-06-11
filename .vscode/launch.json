@@ -8,7 +8,7 @@
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
-            "program": "./data/dataset.py",
+            "program": "./uvpts_scatter.py",
             "console": "integratedTerminal",
             "args": [
             ]
