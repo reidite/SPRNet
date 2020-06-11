@@ -1,6 +1,3 @@
-"""
-    @source: YadiraF/PRNet/utils/cv_plot.py
-"""
 import numpy as np
 from math import cos, sin, atan2, asin
 
@@ -65,7 +62,6 @@ def P2sRt(P):
 
 
 def compute_similarity_transform(points_static, points_to_transform):
-    # http://nghiaho.com/?page_id=671
     p0 = np.copy(points_static).T
     p1 = np.copy(points_to_transform).T
 
@@ -89,11 +85,10 @@ def compute_similarity_transform(points_static, points_to_transform):
     P = np.c_[s * np.eye(3).dot(R), t_final]
     return P
 
-
 def estimate_pose(vertices):
     canonical_vertices = np.load('Data/uv-data/canonical_vertices.npy')
     P = compute_similarity_transform(vertices, canonical_vertices)
-    _, R, _ = P2sRt(P)  # decompose affine matrix to s, R, t
+    _, R, _ = P2sRt(P)
     pose = matrix2angle(R)
 
     return P, pose

@@ -48,31 +48,30 @@ def split_label_val(path):
 
 	return img_name_nlabel
 
-def DetectFace(data_path, boxScale=1.5) :
-	min_size = (120, 120)
-	haar_scale = 1.1
-	min_neighbors = 3
-	haar_flags = 0
-	faceCascade = cv2.Load(os.path.join(data_path, "processing/Data/FACE/haarcascade_frontalface_alt.xml"))
+def detect_face(data_path, boxScale=1.5) :
+	minSize 		= 128
+	haarScale 		= 1.1
+	minNeighbors 	= 3
+	faceCascade 	= cv2.CascadeClassifier(os.path.join(data_path, "processing/Data/FACE/haarcascade_frontalface_alt.xml"))
 	
 	img_path_List = glob.glob(os.path.join(data_path, "usr.data", "*.jpg"))
 	if len(img_path_List)<=0:
 		return None
 	for file in img_path_List:
 		img = cv2.imread(file)
-		gray= cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-		# Equalize the histogram
-		cv2.EqualizeHist(gray, gray)
 		# Detect the faces
-		faces = cv2.HaarDetectObjects(
-			gray, faceCascade, cv2.CreateMemStorage(0),
-			haar_scale, min_neighbors, haar_flags, min_size
-			)
-		if faces:
-			index = 1
-			for face in faces:
+		faces = faceCascade.detectMultiScale(img, haarScale, minNeighbors, minSize)
+		if faces.any():
+			index = 0
+			for (x, y, w, h) in faces:
+				center = [x + w / 2, y + h / 2]
+				size   = int(max(w, h)*1.8)
+				face_img 	= img[int(center[1] - size/2):int(center[1] + size/2), int(center[0] - size/2):int(center[0] + size/2)]
+				scaled_img	= cv2.resize(face_img, (256, 256), interpolation = cv2.INTER_CUBIC)
 				index += 1
-	return 
+				cv2.imwrite('{}/{}'.format(os.path.join(data_path, "demo_im_256x256"), "image%d.jpg" % index), scaled_img)
+		else:
+			return None
 
 class SiaTrainDataset(data.Dataset):
 	def __init__(self, root_dir, filelists, augmentation=False, transform=None):
@@ -226,22 +225,22 @@ class AFLWTestDataset(data.Dataset):
 		### Transform to Tensor
 		img = img.transpose((2, 0, 1))
 		uv = uv.transpose((2, 0, 1))
-		return torch.from_numpy(img), torch.from_numpy(uv)
+		return torch.from_numpy(img.astype(np.float32)), torch.from_numpy(uv.astype(np.float32))
 
 	def __len__(self):
 		return len(self.lines)
 
 class USRTestDataset(data.Dataset):
-	def __init__(self, root_dir, filelists, transform=None):
-		self.root_dir = root_dir
-		self.transform = transform
-		self.lines = Path(filelists).read_text().strip().split('\n')
+	def __init__(self, root_dir, transform=None):
+		detect_face(root_dir)
+		self.root_dir 	= root_dir
+		self.transform 	= transform
+		self.lines 		= glob.glob(os.path.join(root_dir, "demo_im_256x256", "*.jpg"))
 
 	def __getitem__(self, index):                          
-		img_path 	= osp.join(self.root_dir, "verify_im_256x256", self.lines[index])
+		img_path 	= self.lines[index]
 
 		img = cv2.imread(img_path)
-		uv  = np.load(target_path).astype(np.float32)
 
 		### Normalize Img Value 0 ~ 1
 		img = (img / 255.0).astype(np.float32)
@@ -271,7 +270,7 @@ class ToTensor(object):
 		uv2 = uv2.transpose((2, 0, 1))
 		img2 = img2.transpose((2, 0, 1))
 
-		return {'img1': torch.from_numpy(img1), 'img2': torch.from_numpy(img2), 'uv1': torch.from_numpy(uv1), 'uv2': torch.from_numpy(uv2)}
+		return {'img1': torch.from_numpy(img1.astype(np.float32)), 'img2': torch.from_numpy(img2.astype(np.float32)), 'uv1': torch.from_numpy(uv1.astype(np.float32)), 'uv2': torch.from_numpy(uv2.astype(np.float32))}
 
 class ToNormalize(object):
 	"""Normalized process on origin Tensors."""
@@ -286,6 +285,3 @@ class ToNormalize(object):
 		img1 = F.normalize(img1, self.mean, self.std)
 		img2 = F.normalize(img2, self.mean, self.std)
 		return {'img1': img1, 'img2': img1, 'uv1': uv1, 'uv2': uv2}
-
-if __name__ == "__main__":
-	DetectFace("/home/viet/Projects/Pycharm/SPRNet/data")

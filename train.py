@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader
 from data.dataset import SiaTrainDataset, SiaValDataset, ToTensor
 
 from models.sia_loss import *
-from models.resfcn import ResFCN256
+from models.resfcn import load_SPRNET, Loss
 
 
 FLAGS = {   
@@ -45,38 +45,6 @@ lr 	= FLAGS["base_lr"]
 Loss_FWRSE_list, Loss_NME_list = [], []
 
 snapshot = "./train_log/"
-
-
-#region MODEL
-class SPRNet(nn.Module):
-	def __init__(self, model):
-		super(SPRNet, self).__init__()
-		self.fw	= nn.Sequential(*list(model.children())[:-1])
-
-	def forward(self, input_l, input_r):
-		uv_l = self.fw(input_l)
-		uv_r = self.fw(input_r)
-
-		return uv_l, uv_r
-
-class InitLoss():
-	def __init__(self):
-		self.criterion	=	getLossFunction("FWRSE")
-		self.metrics	=	getLossFunction("NME")
-	
-	def forward(self, posmap, gt_posmap):
-		loss_posmap		=	self.criterion(gt_posmap, posmap)
-		metrics_posmap 		= 	self.metrics(gt_posmap, posmap)
-		return loss_posmap, metrics_posmap
-
-def load_SPRNET():
-	prnet = ResFCN256()
-
-	model = SPRNet(prnet)
-
-	return model
-
-#endregion
 
 #region TOOLKIT
 def save_checkpoint(state, filename="checkpoint.pth.tar"):
@@ -152,7 +120,7 @@ def train(train_loader, model, criterion, optimizer, epoch, writer):
 		target_l = target_l.cuda(non_blocking=True)
 		target_r = target_r.cuda(non_blocking=True)
 
-		uv_l, uv_r = model(img_l, img_r)
+		uv_l, uv_r = model([img_l, img_r], isTrain=True)
 
 		loss_l, metrics_l = criterion.forward(uv_l, target_l)
 		optimizer.zero_grad()
@@ -199,7 +167,7 @@ def validate(val_loader, model, criterion, optimizer, epoch, writer):
 			target_l = target_l.cuda(non_blocking=True)
 			target_r = target_r.cuda(non_blocking=True)
 
-			uv_l, uv_r = model(img_l, img_r)
+			uv_l, uv_r = model([img_l, img_r], isTrain=True)
 
 			loss_l, metrics_l = criterion.forward(uv_l, target_l)
 			loss_r, metrics_r = criterion.forward(uv_r, target_r)
@@ -226,7 +194,7 @@ def main(root_dir):
 		model.load_state_dict(pretrained_weights['state_dict'])
 		FLAGS["start_epoch"] = int(pretrained_weights['epoch']) + 1
 	###	Step2: Loss and optimization method
-	criterion = InitLoss()
+	criterion = Loss()
 	optimizer = torch.optim.SGD(model.parameters(),
 								lr 				= FLAGS["base_lr"],
 								momentum 		= FLAGS["momentum"],

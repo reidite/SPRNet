@@ -22,25 +22,54 @@ def randomColor(image):
 
 def getRotateMatrix(angle, image_shape):
     [image_height, image_width, image_channel] = image_shape
-    t1 = np.array([[1, 0, -image_height / 2.], [0, 1, -image_width / 2.], [0, 0, 1]])
-    r1 = np.array([[math.cos(angle), math.sin(angle), 0], [math.sin(-angle), math.cos(angle), 0], [0, 0, 1]])
-    t2 = np.array([[1, 0, image_height / 2.], [0, 1, image_width / 2.], [0, 0, 1]])
+    t1 = np.array([ [1, 0, -image_height / 2.], 
+                    [0, 1, -image_width / 2.], [0, 0, 1]])
+    r1 = np.array([ [math.cos(angle), math.sin(angle), 0], 
+                    [math.sin(-angle), math.cos(angle), 0], 
+                    [0, 0, 1]])
+    t2 = np.array([ [1, 0, image_height / 2.], 
+                    [0, 1, image_width / 2.], 
+                    [0, 0, 1]])
     rt_mat = t2.dot(r1).dot(t1)
-    t1 = np.array([[1, 0, -image_height / 2.], [0, 1, -image_width / 2.], [0, 0, 1]])
-    r1 = np.array([[math.cos(-angle), math.sin(-angle), 0], [math.sin(angle), math.cos(-angle), 0], [0, 0, 1]])
-    t2 = np.array([[1, 0, image_height / 2.], [0, 1, image_width / 2.], [0, 0, 1]])
+    t1 = np.array([ [1, 0, -image_height / 2.], 
+                    [0, 1, -image_width / 2.], 
+                    [0, 0, 1]])
+    r1 = np.array([ [math.cos(-angle), math.sin(-angle), 0], 
+                    [math.sin(angle), math.cos(-angle), 0], 
+                    [0, 0, 1]])
+    t2 = np.array([ [1, 0, image_height / 2.], 
+                    [0, 1, image_width / 2.], 
+                    [0, 0, 1]])
     rt_mat_inv = t2.dot(r1).dot(t1)
     return rt_mat.astype(np.float32), rt_mat_inv.astype(np.float32)
 
 def getRotateMatrix3D(angle, image_shape):
     [image_height, image_width, image_channel] = image_shape
-    t1 = np.array([[1, 0, 0, -image_height / 2.], [0, 1, 0, -image_width / 2.], [0, 0, 1, 0], [0, 0, 0, 1]])
-    r1 = np.array([[math.cos(angle), math.sin(angle), 0, 0], [math.sin(-angle), math.cos(angle), 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
-    t2 = np.array([[1, 0, 0, image_height / 2.], [0, 1, 0, image_width / 2.], [0, 0, 1, 0], [0, 0, 0, 1]])
+    t1 = np.array([ [1, 0, 0, -image_height / 2.], 
+                    [0, 1, 0, -image_width  / 2.], 
+                    [0, 0, 1,                  0], 
+                    [0, 0, 0,                  1]])
+    r1 = np.array([ [math.cos(angle) , math.sin(angle), 0, 0], 
+                    [math.sin(-angle), math.cos(angle), 0, 0], 
+                    [0               ,               0, 1, 0], 
+                    [0               ,               0, 0, 1]])
+    t2 = np.array([ [1, 0, 0, image_height / 2.], 
+                    [0, 1, 0,  image_width / 2.], 
+                    [0, 0, 1,                 0], 
+                    [0, 0, 0,                 1]])
     rt_mat = t2.dot(r1).dot(t1)
-    t1 = np.array([[1, 0, 0, -image_height / 2.], [0, 1, 0, -image_width / 2.], [0, 0, 1, 0], [0, 0, 0, 1]])
-    r1 = np.array([[math.cos(-angle), math.sin(-angle), 0, 0], [math.sin(angle), math.cos(-angle), 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
-    t2 = np.array([[1, 0, 0, image_height / 2.], [0, 1, 0, image_width / 2.], [0, 0, 1, 0], [0, 0, 0, 1]])
+    t1 = np.array([ [1, 0, 0, -image_height / 2.], 
+                    [0, 1, 0,  -image_width / 2.], 
+                    [0, 0, 1,                  0], 
+                    [0, 0, 0,                  1]])
+    r1 = np.array([ [math.cos(-angle), math.sin(-angle), 0, 0], 
+                    [math.sin(angle) , math.cos(-angle), 0, 0], 
+                    [               0,                0, 1, 0], 
+                    [               0,                0, 0, 1]])
+    t2 = np.array([ [1, 0, 0, image_height / 2.], 
+                    [0, 1, 0,  image_width / 2.], 
+                    [0, 0, 1,                 0], 
+                    [0, 0, 0,                 1]])
     rt_mat_inv = t2.dot(r1).dot(t1)
     return rt_mat.astype(np.float32), rt_mat_inv.astype(np.float32)
 

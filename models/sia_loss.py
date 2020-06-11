@@ -21,7 +21,7 @@ def toTensor(image):
     return image
 
 #region Params
-weight_mask_np                          = io.imread("/home/viet/Projects/Pycharm/SPRNet/data/processing/Data/UV/uv_weight_mask.png").astype(float)
+weight_mask_np                          = io.imread(os.path.join(str(os.path.abspath(os.getcwd())), "data/processing/Data/UV/uv_weight_mask.png")).astype(float)
 weight_mask_np[weight_mask_np == 255]   = 256
 weight_mask_np                          = weight_mask_np / 16
 
@@ -37,7 +37,7 @@ if torch.cuda.is_available():
 
 #region UV Loss
 class UVLoss(nn.Module):
-    def __init__(self, is_foreface=False, is_weighted=False, is_nme=False, rate=1.0):
+    def __init__(self, is_foreface=False, is_weighted=False, is_nme=False, is_sia=False, rate=1.0):
         super(UVLoss, self).__init__()
         self.rate                           =   rate
         self.weight_mask                    =   nn.Parameter(weight_mask.clone())
@@ -74,22 +74,24 @@ class UVLoss(nn.Module):
         return loss * self.rate
 
 def getLossFunction(loss_func_name='SquareError'):
-    if loss_func_name == "RootSquareError" or loss_func_name == "RSE":
+    if      loss_func_name == "RootSquareError"                             or loss_func_name == "RSE":
         return UVLoss(is_foreface=False, is_weighted=False)
-    elif loss_func_name == "WeightedRootSquareError" or loss_func_name == "WRSE":
+    elif    loss_func_name == "WeightedRootSquareError"                     or loss_func_name == "WRSE":
         return UVLoss(is_foreface=False, is_weighted=True)
-    elif loss_func_name == "ForefaceRootSquareError" or loss_func_name == "FRSE":
+    elif    loss_func_name == "ForefaceRootSquareError"                     or loss_func_name == "FRSE":
         return UVLoss(is_foreface=True, is_weighted=False)
-    elif loss_func_name == "ForefaceWeightedRootSquareError" or loss_func_name == "FWRSE":
+    elif    loss_func_name == "ForefaceWeightedRootSquareError"             or loss_func_name == "FWRSE":
         return UVLoss(is_foreface=True, is_weighted=True)
-    elif loss_func_name == "NormalizedMeanError" or loss_func_name == "NME":
+    elif    loss_func_name == "NormalizedMeanError"                         or loss_func_name == "NME":
         return UVLoss(is_foreface=True, is_weighted=False, is_nme=True)
+    elif    loss_func_name == "SIAForefaceWeightRootSquareError"            or loss_func_name == "SFWRSE":
+        return UVLoss(is_foreface=True, is_weighted=True, is_nme=False, is_sia=True)
     else:
         return None
 #endregion
 
 #region UV Loss
-def PRNError(is_2d=False, is_normalized=True, is_foreface=True, is_landmark=False, is_gt_landmark=False):
+def NMEError(is_2d=False, is_normalized=True, is_foreface=True, is_landmark=False, is_gt_landmark=False):
     def templateError(y_gt, y_fit, bbox=None, landmarks=None):
         assert (not (is_foreface and is_landmark))
         y_true = y_gt.copy()
@@ -102,7 +104,6 @@ def PRNError(is_2d=False, is_normalized=True, is_foreface=True, is_landmark=Fals
         y_pred[:, :, 2] = y_pred[:, :, 2] - y_pred_mean
 
         if is_landmark:
-            # the gt landmark is not the same as the landmarks get from mesh using index
             if is_gt_landmark:
                 gt = landmarks.copy()
                 gt[:, 2] = gt[:, 2] - gt[:, 2].mean()
@@ -159,24 +160,21 @@ def PRNError(is_2d=False, is_normalized=True, is_foreface=True, is_landmark=Fals
 
     return templateError
 
-def getErrorFunction(error_func_name='NME'):
-    if error_func_name == 'nme2d' or error_func_name == 'normalized mean error2d':
-        return PRNError(is_2d=True, is_normalized=True, is_foreface=True)
-    elif error_func_name == 'nme3d' or error_func_name == 'normalized mean error3d':
-        return PRNError(is_2d=False, is_normalized=True, is_foreface=True)
-    elif error_func_name == 'landmark2d' or error_func_name == 'normalized mean error3d':
-        return PRNError(is_2d=True, is_normalized=True, is_foreface=False, is_landmark=True)
-    elif error_func_name == 'landmark3d' or error_func_name == 'normalized mean error3d':
-        return PRNError(is_2d=False, is_normalized=True, is_foreface=False, is_landmark=True)
-    elif error_func_name == 'gtlandmark2d' or error_func_name == 'normalized mean error3d':
-        return PRNError(is_2d=True, is_normalized=True, is_foreface=False, is_landmark=True, is_gt_landmark=True)
-    elif error_func_name == 'gtlandmark3d' or error_func_name == 'normalized mean error3d':
-        return PRNError(is_2d=False, is_normalized=True, is_foreface=False, is_landmark=True, is_gt_landmark=True)
+def getErrorFunction(error_func_name="NME"):
+    if      error_func_name == 'NormalizedMeanShapeError2D'         or error_func_name == "NME2D":
+        return NMEError(is_2d=True, is_normalized=True, is_foreface=True)
+    elif    error_func_name == 'NormalizedMeanShapeError3D'         or error_func_name == "NME3D":
+        return NMEError(is_2d=False, is_normalized=True, is_foreface=True)
+    elif    error_func_name == 'NormalizedMeanLandmarkError2D'      or error_func_name == 'LNK2D':
+        return NMEError(is_2d=True, is_normalized=True, is_foreface=False, is_landmark=True)
+    elif    error_func_name == 'NormalizedMeanLandmarkError3D'      or error_func_name == 'LNK3D':
+        return NMEError(is_2d=False, is_normalized=True, is_foreface=False, is_landmark=True)
+    elif    error_func_name == 'NormalizedMeanGTLandmarkError2D'    or error_func_name == 'GTLNK2D':
+        return NMEError(is_2d=True, is_normalized=True, is_foreface=False, is_landmark=True, is_gt_landmark=True)
+    elif    error_func_name == 'NormalizedMeanGTLandmarkError2D'    or error_func_name == 'GTLNK3D':
+        return NMEError(is_2d=False, is_normalized=True, is_foreface=False, is_landmark=True, is_gt_landmark=True)
     else:
         print('unknown error:', error_func_name)
 #endregion
-### Weight Mask Loss
-
-### Shape Loss
 
 
