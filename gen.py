@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 from skimage.io import imread, imsave
+import torch.backends.cudnn as cudnn
 from skimage.transform import estimate_transform, warp
 from time import time
 from models.resfcn import load_SPRNET
@@ -42,11 +43,15 @@ def gen():
 		num_workers     =   FLAGS["workers"],
 		shuffle         =   False, 
 		pin_memory      =   True, 
-		drop_last       =   True
+		drop_last       =   False
 	)
 
     cudnn.benchmark = True   
     model.eval()
     with torch.no_grad():
-        for i, (img) in tqdm(enumerate(data_loader)):
+        for i, (img) in enumerate(data_loader):
             gens  = model(img, isTrain=False)[:, :, 1:257, 1:257]
+            prd = gens[0].cpu().numpy().transpose(1, 2, 0)  * 280.0
+            np.save('{}/{}'.format("/home/viet/Projects/Pycharm/SPRNet/result/usr", "image1.jpg".replace('jpg', 'npy')), prd)
+if __name__ == '__main__':
+    gen()

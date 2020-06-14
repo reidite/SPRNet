@@ -243,11 +243,67 @@ class Loss():
 	def __init__(self):
 		self.criterion	=	getLossFunction("FWRSE")
 		self.metrics	=	getLossFunction("NME")
-	
-	def forward(self, posmap, gt_posmap):
-		loss_posmap		=	self.criterion(gt_posmap, posmap)
-		metrics_posmap 		= 	self.metrics(gt_posmap, posmap)
-		return loss_posmap, metrics_posmap
+
+	def compute_similarity_transform(self, posmap_l, posmap_r):
+		points_l    	= posmap_l[:, :, foreface_ind[:, 0], foreface_ind[:, 1]].reshape(posmap_l.shape[0], posmap_l.shape[1], -1)
+		points_r      	= posmap_r[:, :, foreface_ind[:, 0], foreface_ind[:, 1]].reshape(posmap_r.shape[0], posmap_r.shape[1], -1)
+		
+		pl = points_l.clone()
+		pr = points_r.clone()
+		
+		t0 = -torch.mean(pl, dim=2, keepdim=True)
+		t1 = -torch.mean(pr, dim=2, keepdim=True)
+		
+		p0l = pl + t0
+		p0r = pr + t1
+		
+		covariance_matrix = torch.bmm(p0l, torch.transpose(p0r, 1, 2))
+		U, S, V = torch.svd(covariance_matrix)
+		R = torch.bmm(U, V)
+		for i in range(R.shape[0]):
+			if torch.det(R[i]) < 0:
+				R[i][:, 2] *= -1
+
+		rms_d0 = torch.sqrt(torch.mean(torch.norm(p0l, dim=2) ** 2, dim=1))
+		rms_d1 = torch.sqrt(torch.mean(torch.norm(p0r, dim=2) ** 2, dim=1))
+
+		s 	= (rms_d0 / rms_d1)
+		e 	= torch.stack([torch.eye(3) for i in range(s.shape[0])]).cuda()
+		Rs	= torch.bmm(e, R)
+		for i in range(s.shape[0]):
+			Rs[i] = torch.mul(Rs[i], s[i])
+		return Rs, t0, t1
+
+	def transform_l(self, pos, Rs, tl, tr):
+		b, c, h, w 	= pos.shape
+		vts 		= torch.reshape(pos, (b, c, h * w))
+		vts			= vts + tl
+		vts			= torch.bmm(torch.inverse(Rs), vts)
+		vts			= vts - tr
+		
+		return torch.reshape(vts, pos.shape)
+
+	def transform_r(self, pos, Rs, tl, tr):
+		b, c, h, w 	= pos.shape
+		vts 		= torch.reshape(pos, (b, c, h * w))
+		vts			= vts + tr
+		vts			= torch.bmm(Rs, vts)
+		vts			= vts - tl
+
+		return torch.reshape(vts, pos.shape)
+
+	def forward(self, posmap_l, gt_posmap_l, label, posmap_r, gt_posmap_r):
+		Rs, tl, tr 				= 	self.compute_similarity_transform(gt_posmap_l, gt_posmap_r)
+		t_posmap_l				=	self.transform_l(posmap_l.clone(), Rs, tl, tr)
+		t_posmap_r				=	self.transform_r(posmap_r.clone(), Rs, tl, tr)
+		temp					=	self.criterion(gt_posmap_l, posmap_l)
+		lb						=	label.squeeze()
+		inv_lb					=	(1 - label).squeeze()
+		loss_posmap_l			=	torch.mul(self.criterion(gt_posmap_l, posmap_l), inv_lb) + torch.mul(self.criterion(gt_posmap_l, t_posmap_l), lb)
+		metrics_posmap_l 		= 	torch.mul(self.metrics(gt_posmap_l, posmap_l), inv_lb) + torch.mul(self.metrics(gt_posmap_l, t_posmap_l), lb)
+		loss_posmap_r			=	torch.mul(self.criterion(gt_posmap_r, posmap_r), inv_lb) + torch.mul(self.criterion(gt_posmap_r, t_posmap_r), lb)
+		metrics_posmap_r 		= 	torch.mul(self.metrics(gt_posmap_r, posmap_r), inv_lb) + torch.mul(self.metrics(gt_posmap_r, t_posmap_r), lb)
+		return torch.mean(loss_posmap_l), torch.mean(metrics_posmap_l), torch.mean(loss_posmap_r), torch.mean(metrics_posmap_r)
 
 def load_SPRNET():
 	prnet = ResFCN256()

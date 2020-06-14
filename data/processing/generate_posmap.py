@@ -21,11 +21,11 @@ from face3d.morphable_model import MorphabelModel
 
 working_folder  = "/home/viet/Projects/Pycharm/SPRNet/"
 FLAGS = {   
-            "data_path"     : "/home/viet/Projects/Pycharm/SPRNet/data/test.data/AFLW2000-3D/",
-			"list_path"     : os.path.join(working_folder, "data/test.data/AFLW2000-3D.list"),
+            "data_path"     : "/home/viet/Data/train_aug_120x120",
+			"list_path"     : os.path.join(working_folder, "train.configs/label_train_aug_120x120.list.train"),
             "param_path"    : os.path.join(working_folder, "train.configs/param_all_norm.pkl"),
-			"save_uv_path"  : os.path.join(working_folder, "data/verify_uv_256x256"),
-			"save_im_path"  : os.path.join(working_folder, "data/verify_im_256x256"),
+			"save_uv_path"  : os.path.join(working_folder, "data/train_uv_256x256"),
+			"save_im_path"  : os.path.join(working_folder, "data/train_im_256x256"),
 			"bfm_path"      : os.path.join(working_folder, "data/processing/Data/BFM/Out/BFM.mat"),
             "bfm_uv_path"   : os.path.join(working_folder, "data/processing/Data/BFM/Out/BFM_UV.mat"),
             "uv_h"          : 256,
@@ -33,7 +33,7 @@ FLAGS = {
 			"image_h"       : 256,
 			"image_w"       : 256,
             "num_worker"    : 8,
-            "is62Param"     : False
+            "is62Param"     : True
 		}
 
 uv_kpt_ind  = np.loadtxt(os.path.join(working_folder, "data/processing/Data/UV/uv_kpt_ind.txt")).astype(np.int32)
@@ -136,10 +136,10 @@ def show_uv_mesh(img_path, uv, keypoint):
 def generate_posmap_lb_62params(bfm, image_path, param, save_uv_folder, save_img_folder, uv_h = 256, uv_w = 256, image_h = 256, image_w = 256):
     ### 1. load image and resize from 120 to 256
     image_name = image_path.strip().split('/')[-1]
-    # img = io.imread(image_path)
-    # img = cv2.resize(img, None, fx=32/15,fy=32/15, interpolation = cv2.INTER_CUBIC)
-    # image = img/255
-    # [h, w, c] = image.shape
+    img = io.imread(image_path)
+    img = cv2.resize(img, None, fx=32/15,fy=32/15, interpolation = cv2.INTER_CUBIC)
+    image = img/255
+    [h, w, c] = image.shape
 
     ### 2. reconstruct vertex from 62 BFM parameters
     vertices = reconstruct_vertex(param, dense = True).astype(np.float32) * 32 / 15
@@ -158,7 +158,6 @@ def generate_posmap_lb_62params(bfm, image_path, param, save_uv_folder, save_img
     # kpt = uv_position_map[uv_kpt_ind[1,:].astype(np.int32), uv_kpt_ind[0,:].astype(np.int32), :]
     # show_uv_mesh(image_path, uv_position_map, kpt)
     ### 5. save files
-    # io.imsave('{}/{}'.format(save_folder, image_name), np.squeeze(cropped_image))
     np.save('{}/{}'.format(save_uv_folder, image_name.replace('jpg', 'npy')), uv_position_map)
     io.imsave('{}/{}'.format(save_img_folder, image_name), img)
 
@@ -223,16 +222,18 @@ def generate_posmap_lb_fitting(bfm, image_path, mat_path, save_uv_folder, save_i
     position[:, 2]  = image_vertices[:, 2]*scale # scale z
     position[:, 2]  = position[:, 2] - np.min(position[:, 2]) # translate z
 
+    
     ### 4. render position in uv space
     uv_position_map = mesh.render.render_colors(uv_coords, bfm.full_triangles, position, uv_h, uv_w, c = 3)
     ### 5. get 68 key points index ~> visualize
     # kpt = image_vertices[bfm.kpt_ind, :].astype(np.int32)
     # show_ALFW_mesh(cropped_image, position.transpose(), bfm.kpt_ind)
-    # kpt = uv_position_map[uv_kpt_ind[1,:].astype(np.int32), uv_kpt_ind[0,:].astype(np.int32), :]
-    # show_uv_mesh(os.path.join(save_img_folder, image_name), uv_position_map, kpt)
+    # kpt = uv_position_map[uv_kpt_ind[1,:].astype(np.int32)v, uv_kpt_ind[0,:].astype(np.int32), :]
+    # show_uv_mesh(os.path.join(save_img_folder, image_name), u_position_map, kpt)
     ### 6. save files
-    io.imsave('{}/{}'.format(save_img_folder, image_name), (np.squeeze(cropped_image * 255.0)).astype(np.uint8))
-    np.save('{}/{}'.format(save_uv_folder, image_name.replace('jpg', 'npy')), uv_position_map)
+    # sio.savemat(os.path.join(working_folder, "result", image_name.replace('.jpg', '.mat')), {'vertex': position})
+    # io.imsave('{}/{}'.format(save_img_folder, image_name), (np.squeeze(cropped_image * 255.0)).astype(np.uint8))
+    # np.save('{}/{}'.format(save_uv_folder, image_name.replace('jpg', 'npy')), uv_position_map)
 
 if __name__ == '__main__':
     if not os.path.exists(FLAGS["save_uv_path"]):
@@ -248,7 +249,7 @@ if __name__ == '__main__':
     
     # load bfm 
     bfm = MorphabelModel(FLAGS["bfm_path"]) 
-    img_names_list          = Path(FLAGS["list_path"]).read_text().strip().split('\n')
+    img_names_list          = Path(FLAGS["list_path"]).read_text().strip().split('\n')[:128]
     if FLAGS["is62Param"]:
         param_62d               = pickle.load(open(FLAGS["param_path"],'rb'))
         index = 0
