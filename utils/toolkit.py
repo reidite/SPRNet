@@ -101,9 +101,9 @@ def compute_similarity_transform(points_static, points_to_transform):
     p0c = p0 + t0
     p1c = p1 + t1
 
-    covariance_matrix = p0c.dot(p1c.T)
-    U, S, V = np.linalg.svd(covariance_matrix)
-    R = U.dot(V)
+    covariance_matrix = p0c.dot(p1c.T) #3 3
+    U, S, V = np.linalg.svd(covariance_matrix) #U 3 3 S 3 V 3 3
+    R = U.dot(V) #R 3 3
     if np.linalg.det(R) < 0:
         R[:, 2] *= -1
 
@@ -112,6 +112,8 @@ def compute_similarity_transform(points_static, points_to_transform):
 
     s = (rms_d0 / rms_d1)
     P = np.c_[s * np.eye(3).dot(R), t_final]
+    temp = np.eye(3).dot(R)
+    P_= np.c_[s * temp, t_final]
     return P
 
 def estimate_pose(vertices):
@@ -154,7 +156,7 @@ def show_uv_mesh(img, uv, keypoint, isMesh=True):
     img = cv2.resize(img, (256,256))
     img = cv2.resize(img, None, fx=2,fy=2,interpolation = cv2.INTER_CUBIC)
     if isMesh:
-        x, y, z = uv.transpose(2, 0, 1).reshape(3, -1) * 2
+        x, y, z = get_vertices(uv).transpose() * 2
         for i in range(0, x.shape[0], 1):
             img = cv2.circle(img, (int(x[i]), int(y[i])), 1, (255, 0, 0), -1)
     x, y, z = keypoint.transpose().astype(np.int32) * 2

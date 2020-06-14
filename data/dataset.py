@@ -14,9 +14,10 @@ import argparse
 import random
 from data.augmentation import Augment
 
+
 def create_label_dict_train(path):
 	label_dict = defaultdict(list)
-	names_list = Path(path).read_text().strip().split('\n')
+	names_list = Path(path).read_text().strip().split('\n')[:128]
 	for f_name in names_list:
 		f_s = f_name.split('\000')
 		label_dict[int(f_s[1])].append(f_s[0])
@@ -24,7 +25,7 @@ def create_label_dict_train(path):
 	return label_dict
 
 def split_label_train(path):
-	names_list = Path(path).read_text().strip().split('\n')
+	names_list = Path(path).read_text().strip().split('\n')[:128]
 	img_name_nlabel = []
 	for img_name in names_list:
 		img_name_nlabel.append(img_name.split('\000')[0])
@@ -33,7 +34,7 @@ def split_label_train(path):
 
 def create_label_dict_val(path):
 	label_dict = defaultdict(list)
-	names_list = Path(path).read_text().strip().split('\n')
+	names_list = Path(path).read_text().strip().split('\n')[:128]
 	for f_name in names_list:
 		f_s = f_name.split('\000')
 		label_dict[int(f_s[1])].append(f_s[0])
@@ -41,7 +42,7 @@ def create_label_dict_val(path):
 	return label_dict
 
 def split_label_val(path):
-	names_list = Path(path).read_text().strip().split('\n')
+	names_list = Path(path).read_text().strip().split('\n')[:128]
 	img_name_nlabel = []
 	for img_name in names_list:
 		img_name_nlabel.append(img_name.split('\000')[0])

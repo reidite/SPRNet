@@ -62,7 +62,7 @@ class UVLoss(nn.Module):
                 bottom      = torch.max(gt[:, 1, :], dim=1)[0]
                 bbox_size   = torch.sqrt((right - left) * (bottom - top))
                 dist        = dist / bbox_size
-                return torch.mean(dist) * self.rate
+                return dist * self.rate
 
         dist = torch.sqrt(torch.sum((y_true - y_pred) ** 2, 1))
         if self.is_weighted:
@@ -70,7 +70,7 @@ class UVLoss(nn.Module):
         if self.is_foreface:
             dist = dist * (self.face_mask * face_mask_mean_fix_rate)
         
-        loss = torch.mean(dist)
+        loss = torch.mean(torch.mean(dist, dim = 2), dim = 1)
         return loss * self.rate
 
 def getLossFunction(loss_func_name='SquareError'):

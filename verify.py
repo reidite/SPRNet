@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from data.dataset import AFLWTestDataset, ToTensor, ToNormalize
 from models.sia_loss import *
 from models.resfcn import load_SPRNET
-from utils.toolkit import show_uv_mesh
+from utils.toolkit import show_uv_mesh, get_vertices
 import scipy.io as sio
 import os.path as osp
 import os
@@ -33,12 +33,11 @@ FLAGS = {
             "uv_kpt_path"   : os.path.join(working_folder, "data/processing/Data/UV/uv_kpt_ind.txt"),
             "device"        : "cuda",
             "devices_id"    : [0],
-            "batch_size"    : 16, 
+            "batch_size"    : 8, 
             "workers"       : 8
 		}
 
 uv_kpt_ind = np.loadtxt(FLAGS["uv_kpt_path"]).astype(np.int32)
-
 
 def verify():            
     model   = load_SPRNET()
@@ -51,11 +50,11 @@ def verify():
 		filelists 		= FLAGS["data_list"],
         augmentation    = False,
 		transform 		= transforms.Compose([ToTensor()])
-	)
+	) 
 
     data_loader = DataLoader(
 		dataset, 
-		batch_size      =   FLAGS["batch_size"], 
+		batch_size      =   FLAGS["batch_size"],  
 		num_workers     =   FLAGS["workers"],
 		shuffle         =   False, 
 		pin_memory      =   True, 
@@ -82,15 +81,16 @@ def verify():
                 NME2DError_List.append(NME2DError(grt, prd))
                 NME3DError_List.append(NME3DError(grt, prd))
                 
-    print(np.mean(NME2DError_List))
-    print(np.mean(NME2DError_List))
-                # show_img    = img[i].cpu().numpy().transpose(1, 2, 0)
-                # show_gen    = gens[i].cpu().numpy().transpose(1, 2, 0)
+    
+                show_img    = img[i].cpu().numpy().transpose(1, 2, 0)
+                show_gen    = gens[i].cpu().numpy().transpose(1, 2, 0)
 
-                # show_img_img    = (255.0 * (show_img - np.min(show_img))/np.ptp(show_img)).astype(int)
-                # show_img_uv     = show_gen * 280.0
-                # kpt             = show_img_uv[uv_kpt_ind[1,:].astype(np.int32), uv_kpt_ind[0,:].astype(np.int32), :]
-                # show_uv_mesh(show_img, show_img_uv, kpt)
+                show_img_img    = (255.0 * (show_img - np.min(show_img))/np.ptp(show_img)).astype(int)
+                show_img_uv     = show_gen * 280.0
+                kpt             = show_img_uv[uv_kpt_ind[1,:].astype(np.int32), uv_kpt_ind[0,:].astype(np.int32), :]
+                show_uv_mesh(show_img, show_img_uv, kpt)
+    print(np.mean(NME2DError_List))
+    print(np.mean(NME2DError_List))
     return
 
 if __name__ == '__main__':

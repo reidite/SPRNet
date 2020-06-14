@@ -24,7 +24,7 @@ FLAGS = {
 			"start_epoch": 1,
 			"target_epoch": 80,
 			"device": "cuda",
-			"batch_size": 64,
+			"batch_size": 4,
 			"save_interval": 5,
 			"base_lr": 2e-4,
 			"momentum" : 0.95,
@@ -37,7 +37,7 @@ FLAGS = {
 			"gauss_kernel": "original",
 			"summary_path": "./runs",
 			"summary_step": 0,
-			"resume": True
+			"resume": False
 		}
 
 lr 	= FLAGS["base_lr"]
@@ -120,14 +120,13 @@ def train(train_loader, model, criterion, optimizer, epoch, writer):
 		target_l = target_l.cuda(non_blocking=True)
 		target_r = target_r.cuda(non_blocking=True)
 
-		uv_l, uv_r = model([img_l, img_r], isTrain=True)
+		uv_l, uv_r = model(input=[img_l, img_r], isTrain=True)
 
-		loss_l, metrics_l = criterion.forward(uv_l, target_l)
+		loss_l, metrics_l, loss_r, metrics_r  = criterion.forward(uv_l[:, :, 1:257, 1:257], target_l, label, uv_r[:, :, 1:257, 1:257], target_r)
 		optimizer.zero_grad()
 		loss_l.backward()
 		optimizer.step()
 
-		loss_r, metrics_r = criterion.forward(uv_r, target_r)
 		optimizer.zero_grad()
 		loss_r.backward()
 		optimizer.step()
@@ -167,10 +166,9 @@ def validate(val_loader, model, criterion, optimizer, epoch, writer):
 			target_l = target_l.cuda(non_blocking=True)
 			target_r = target_r.cuda(non_blocking=True)
 
-			uv_l, uv_r = model([img_l, img_r], isTrain=True)
+			uv_l, uv_r = model(input=[img_l, img_r], isTrain=True)
 
-			loss_l, metrics_l = criterion.forward(uv_l, target_l)
-			loss_r, metrics_r = criterion.forward(uv_r, target_r)
+			loss_l, metrics_l, loss_r, metrics_r = criterion.forward(uv_l[:, :, 1:257, 1:257], target_l, label, uv_r[:, :, 1:257, 1:257], target_r)
 
 			Loss_FWRSE_list.append(loss_l.item())
 			Loss_NME_list.append(metrics_l.item())
@@ -242,7 +240,7 @@ def main(root_dir):
 	x 			= torch.rand(1, 3, 256, 256).cuda()
 	y 			= torch.rand(1, 3, 256, 256).cuda()
 
-	train_writer.add_graph(model.module, (x, y))
+	train_writer.add_graph(model.module.fw, x)
 
 	###	Step5: Show CUDA Info
 	os.environ["CUDA_VISIBLE_DEVICES"] = str(FLAGS["devices_id"][0])
