@@ -137,7 +137,12 @@ def NMEError(is_2d=False, is_normalized=True, is_foreface=True, is_landmark=Fals
         if is_normalized:  # 2D bbox size
             # bbox_size = np.sqrt(np.sum(np.square(bbox[0, :] - bbox[1, :])))
             if is_landmark:
-                bbox_size = np.sqrt((bbox[0, 0] - bbox[1, 0]) * (bbox[0, 1] - bbox[1, 1]))
+                # bbox_size = np.sqrt((bbox[0, 0] - bbox[1, 0]) * (bbox[0, 1] - bbox[1, 1]))
+                face_vertices = y_gt[face_mask_np > 0]
+                minx, maxx = np.min(face_vertices[:, 0]), np.max(face_vertices[:, 0])
+                miny, maxy = np.min(face_vertices[:, 1]), np.max(face_vertices[:, 1])
+                llength = np.sqrt((maxx - minx) * (maxy - miny))
+                bbox_size = llength
             else:
                 face_vertices = y_gt[face_mask_np > 0]
                 minx, maxx = np.min(face_vertices[:, 0]), np.max(face_vertices[:, 0])
@@ -164,11 +169,11 @@ def getErrorFunction(error_func_name="NME"):
     if      error_func_name == 'NormalizedMeanShapeError2D'         or error_func_name == "NME2D":
         return NMEError(is_2d=True, is_normalized=True, is_foreface=True)
     elif    error_func_name == 'NormalizedMeanShapeError3D'         or error_func_name == "NME3D":
-        return NMEError(is_2d=False, is_normalized=True, is_foreface=True)
+        return NMEError(is_2d=False, is_normalized=False, is_foreface=True)
     elif    error_func_name == 'NormalizedMeanLandmarkError2D'      or error_func_name == 'LNK2D':
         return NMEError(is_2d=True, is_normalized=True, is_foreface=False, is_landmark=True)
     elif    error_func_name == 'NormalizedMeanLandmarkError3D'      or error_func_name == 'LNK3D':
-        return NMEError(is_2d=False, is_normalized=True, is_foreface=False, is_landmark=True)
+        return NMEError(is_2d=True, is_normalized=True, is_foreface=False, is_landmark=True)
     elif    error_func_name == 'NormalizedMeanGTLandmarkError2D'    or error_func_name == 'GTLNK2D':
         return NMEError(is_2d=True, is_normalized=True, is_foreface=False, is_landmark=True, is_gt_landmark=True)
     elif    error_func_name == 'NormalizedMeanGTLandmarkError2D'    or error_func_name == 'GTLNK3D':

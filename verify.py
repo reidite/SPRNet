@@ -16,12 +16,12 @@ from torch.utils.data import DataLoader
 from data.dataset import AFLWTestDataset, ToTensor, ToNormalize
 from models.sia_loss import *
 from models.resfcn import load_SPRNET
-from utils.toolkit import show_uv_mesh, get_vertices
+from utils.toolkit import show_uv_mesh, get_vertices, estimate_pose, show_kpt_result, UVmap2Mesh, showMesh
 import scipy.io as sio
 import os.path as osp
-import os
 import cv2
-import matplotlib.pylab as plt
+from math import pi
+
 
 
 working_folder  = str(os.path.abspath(os.getcwd()))
@@ -33,7 +33,7 @@ FLAGS = {
             "uv_kpt_path"   : os.path.join(working_folder, "data/processing/Data/UV/uv_kpt_ind.txt"),
             "device"        : "cuda",
             "devices_id"    : [0],
-            "batch_size"    : 8, 
+            "batch_size"    : 32, 
             "workers"       : 8
 		}
 
@@ -50,7 +50,7 @@ def verify():
 		filelists 		= FLAGS["data_list"],
         augmentation    = False,
 		transform 		= transforms.Compose([ToTensor()])
-	) 
+	)
 
     data_loader = DataLoader(
 		dataset, 
@@ -63,34 +63,39 @@ def verify():
     cudnn.benchmark = True   
     model.eval()
     # summary(model.module.fw, (3, 256, 256))
-    NME2DError_List     =   []
-    NME3DError_List     =   []
+    NME3DError_List         =   []
 
-    NME2DError          =   getErrorFunction("NME2D")
+    # NME2DError          =   getErrorFunction("NME2D")
     NME3DError          =   getErrorFunction("NME3D")
     with torch.no_grad():
         for i, (img, target) in tqdm(enumerate(data_loader)):
             target.requires_grad  = False
             target = target.cuda(non_blocking=True)
             gens  = model(img, isTrain=False)[:, :, 1:257, 1:257]
-            
-            for i in range(FLAGS["batch_size"]):
+
+            for i in range(gens.shape[0]):
+                inp = img[i].cpu().numpy().transpose(1, 2, 0)
                 prd = gens[i].cpu().numpy().transpose(1, 2, 0)  * 280.0
                 grt = target[i].cpu().numpy().transpose(1, 2, 0) * 280.0
 
-                NME2DError_List.append(NME2DError(grt, prd))
+                # NME2DError_List.append(NME2DError(grt, prd))
                 NME3DError_List.append(NME3DError(grt, prd))
-                
-    
-                show_img    = img[i].cpu().numpy().transpose(1, 2, 0)
-                show_gen    = gens[i].cpu().numpy().transpose(1, 2, 0)
 
-                show_img_img    = (255.0 * (show_img - np.min(show_img))/np.ptp(show_img)).astype(int)
-                show_img_uv     = show_gen * 280.0
-                kpt             = show_img_uv[uv_kpt_ind[1,:].astype(np.int32), uv_kpt_ind[0,:].astype(np.int32), :]
-                show_uv_mesh(show_img, show_img_uv, kpt)
-    print(np.mean(NME2DError_List))
-    print(np.mean(NME2DError_List))
+                show_img    = (255.0 * (inp - np.min(inp))/np.ptp(inp)).astype(np.uint8)
+                # P, pose, (s, R, t) = estimate_pose(get_vertices(show_img_uv))
+                # if pose[0] >= - 30.0 / 180.0 * pi and pose[0] <=  30.0 / 180.0 * pi:
+                #     NME3D_30_Error_List.append(NME3DError(grt, prd))
+                # elif (pose[0] >= - 60.0 / 180.0 * pi and pose[0] < - 30.0 / 180.0 * pi) or (pose[0] > 30.0 / 180.0 * pi and pose[0] <= 60.0 / 180.0 * pi):
+                #     NME3D_60_Error_List.append(NME3DError(grt, prd))
+                # else:
+                #     NME3D_90_Error_List.append(NME3DError(grt, prd))
+                tex         = cv2.remap(show_img, prd[:,:,:2].astype(np.float32), None, interpolation=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT,borderValue=(0))
+                mesh_info   = UVmap2Mesh(uv_position_map=prd, uv_texture_map=tex)
+                showMesh(mesh_info, tex, show_img)
+                # show_uv_mesh(show_img, prd)
+                # show_kpt_result(show_img, prd, grt)
+    # print(np.mean(NME2DError_List))
+    print(np.mean(NME3DError_List))
     return
 
 if __name__ == '__main__':

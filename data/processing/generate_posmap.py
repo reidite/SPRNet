@@ -65,7 +65,7 @@ def reconstruct_vertex(param, whitening=True, dense=True):
         vertex[1, :] = std_size + 1 - vertex[1, :]
     return vertex
 
-def process_uv(uv_coords, uv_h = 256, uv_w = 120):
+def process_uv(uv_coords, uv_h = 256, uv_w = 256):
     uv_coords[:,0] = uv_coords[:,0]*(uv_w - 1)
     uv_coords[:,1] = uv_coords[:,1]*(uv_h - 1)
     uv_coords[:,1] = uv_h - uv_coords[:,1] - 1
@@ -244,7 +244,7 @@ if __name__ == '__main__':
 
     # load uv coords
     global uv_coords
-    uv_coords = face3d.morphable_model.load.load_uv_coords(FLAGS["bfm_uv_path"]) 
+    uv_coords = face3d.morphable_model.load.load_uv_coords(FLAGS["bfm_uv_path"])
     uv_coords = process_uv(uv_coords, FLAGS["uv_h"], FLAGS["uv_w"])
     
     # load bfm 

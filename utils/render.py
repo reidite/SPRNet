@@ -77,7 +77,6 @@ def get_point_weight(point, tri_points):
 
     return w0, w1, w2
 
-
 def render_texture(vertices, colors, triangles, h, w, c = 3):
     ''' render mesh by z buffer
     Args:

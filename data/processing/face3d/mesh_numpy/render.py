@@ -217,7 +217,7 @@ def render_colors(vertices, triangles, colors, h, w, c = 3):
     return image
 
 
-def render_texture(vertices, triangles, texture, tex_coords, tex_triangles, h, w, c = 3, mapping_type = 'nearest'):
+def render_texture(vertices, triangles, texture, tex_coords, tex_triangles, h, w, c = 3, mapping_type = 'bilinear'):
     ''' render mesh with texture map
     Args:
         vertices: [nver], 3

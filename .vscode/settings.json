@@ -2,6 +2,7 @@
                 "python.linting.enabled": true,
                 "cSpell.words": [
                     "ALFW",
+                    "Affines",
                     "FWRSE",
                     "GTLNK",
                     "Illum",
@@ -36,6 +37,7 @@
                     "tform",
                     "thetal",
                     "tprs",
+                    "trimed",
                     "vmax",
                     "vmin",
                     "wpdc",

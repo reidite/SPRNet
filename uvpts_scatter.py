@@ -12,6 +12,20 @@ import cv2
 import math
 import scipy.spatial as spatial
 from utils.toolkit import *
+import matplotlib.pyplot as plt
+from skimage import measure
+from PIL import Image
+def plot_mesh(vertices, triangles, subplot = [1,1,1], title = '', el = 100, az = 80, lwdt=-1.3, dist = 6, color = "red"):
+    ax = plt.subplot(subplot[0], subplot[1], subplot[2], projection = '3d')
+	# ax.plot_trisurf(vertices[:, 0], vertices[:, 1], vertices[:, 2], triangles = triangles, lw = lwdt, color = color, alpha = 1)
+    downsize = 10
+    ax.scatter(vertices[::downsize, 0], vertices[::downsize, 1], vertices[::downsize, 2], c=color, marker='o')
+    ax.axis("off")
+    ax.view_init(elev = el, azim = az)
+    ax.dist = dist
+    plt.title(title)
+    plt.show()
+
 def GetBilinearPixel(imArr, posX, posY, out):
 
 	#Get integer and fractional parts of numbers
@@ -35,10 +49,7 @@ def GetBilinearPixel(imArr, posX, posY, out):
 
 	return None #Helps with profiling view
 
-def WarpProcessing(inIm, inArr, 
-		outArr, 
-		inTriangle, 
-		triAffines, shape):
+def WarpProcessing(inIm, inArr, outArr, inTriangle, triAffines, shape):
 
 	#Ensure images are 3D arrays
 	px = np.empty((inArr.shape[2],), dtype=np.int32)
@@ -141,34 +152,6 @@ def PiecewiseAffineTransform(srcIm, srcPoints, dstIm, dstPoints):
 		targetArr = targetArr.reshape((targetArr.shape[0],targetArr.shape[1]))
 	dstIm.paste(Image.fromarray(targetArr))
 
-def angle2matrix(angles):
-    ''' get rotation matrix from three rotation angles(radian). The same as in 3DDFA.
-    Args:
-        angles: [3,]. x, y, z angles
-        x: yaw.
-        y: pitch.
-        z: roll.
-    Returns:
-        R: 3x3. rotation matrix.
-    '''
-    # x, y, z = np.deg2rad(angles[0]), np.deg2rad(angles[1]), np.deg2rad(angles[2])
-    # x, y, z = angles[0], angles[1], angles[2]
-    y, x, z = angles[0], angles[1], angles[2]
-
-    # x
-    Rx=np.array([[1,      0,       0],
-                 [0, cos(x),  -sin(x)],
-                 [0, sin(x),  cos(x)]])
-    # y
-    Ry=np.array([[ cos(y), 0, sin(y)],
-                 [      0, 1,      0],
-                 [-sin(y), 0, cos(y)]])
-    # z
-    Rz=np.array([[cos(z), -sin(z), 0],
-                 [sin(z),  cos(z), 0],
-                 [     0,       0, 1]])
-    R = Rz.dot(Ry).dot(Rx)
-    return R.astype(np.float32)
 
 def transform_vertices(R, vts):
     p = np.copy(vts).T
@@ -177,6 +160,9 @@ def transform_vertices(R, vts):
     vts = np.linalg.inv(R).dot(pc)
     vts = vts + t
     return vts.T
+
+
+
 
 if __name__ == "__main__":
     # file_path           = (str(os.path.abspath(os.getcwd())))
@@ -188,8 +174,16 @@ if __name__ == "__main__":
     # kpt                 = get_landmarks(uv_position_map)
     # img                 = cv2.imread(os.path.join(file_path, "data", "verify_im_256x256", file_name + ".jpg"))
     # show_uv_mesh(img, uv_position_map, kpt, False)
-	img                 = cv2.imread("/home/viet/Projects/Pycharm/SPRNet/result/store/image00008.jpg")
-	uv_position_map     = np.load(os.path.join("/home/viet/Projects/Pycharm/SPRNet/result/store", "image00008.npy")).astype(np.float32)
+    img                 = cv2.imread("/home/viet/Projects/Pycharm/SPRNet/result/store/image00008.jpg")
+    img                 = (img / 255.0).astype(np.float32)
+    
+    uv_position_map     = np.load(os.path.join("/home/viet/Projects/Pycharm/SPRNet/result/store", "image00008.npy")).astype(np.float32)
+    kpt                 = get_landmarks(uv_position_map)
+    show_uv_mesh(img, uv_position_map, kpt, False)
+    # srcIm = Image.open("/home/viet/Projects/Pycharm/SPRNet/result/store/image00008.jpg")	
+    # dstIm = Image.new(srcIm.mode,(500,500))
+
+    
     # texture             = cv2.remap(img, uv_position_map[:,:,:2].astype(np.float32), None, interpolation=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT,borderValue=(0))
     # np.save(os.path.join("/home/viet/Projects/Pycharm/SPRNet/result/usr", "image1_texture.npy"), texture)
     ### Create Large Pose
@@ -201,18 +195,20 @@ if __name__ == "__main__":
     
     # kpt                 = get_landmarks(uv_position_map)
     # show_uv_mesh(img, uv_position_map, kpt, False)
-
-    # img                 = img/255.0
+    texture             	= cv2.remap(img, uv_position_map[:,:,:2].astype(np.float32), None, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT,borderValue=(0))
+    vts                 	= get_vertices(uv_position_map)
+    tex 					= get_vertices(texture)
+    P, pose, (s, R, t) 		= estimate_pose(vts)
+    front_vts               = transform_vertices(R, vts) * 2
+    # plot_mesh(vts, triangles)
+    # texcoord = np.zeros_like(uv_position_map) 
+    # texcoord[:,0] = uv_position_map[:,0]*(256 - 1)
+    # texcoord[:,1] = uv_position_map[:,1]*(256 - 1)
+    # texcoord[:,1] = 256 - texcoord[:,1] - 1
+    # texcoord = np.hstack((texcoord, np.zeros((texcoord.shape[0], 1))))
+    # img_show    			= render_texture(vts, triangles, texture, texcoord, triangles,256, 256, 3)
+    # img_show                = cv2.resize(img_show, None, fx=2,fy=2,interpolation = cv2.INTER_CUBIC)
+    # for i in range(0, front_vts.shape[0], 1):
+    # 	img_show = cv2.circle(img_show, (int(front_vts[i][0]), int(front_vts[i][1])), 1, (250, 0, 0), -1)
     
-	vts                 = get_vertices(uv_position_map)
-
-	P, pose, (s, R, t) = estimate_pose(vts)
-	front_vts               = transform_vertices(P, vts) * 2
-	img_show    = img
-	img_show                = cv2.resize(img, None, fx=2,fy=2,interpolation = cv2.INTER_CUBIC)
-	for i in range(0, front_vts.shape[0], 1):
-		img_show = cv2.circle(img_show, (int(front_vts[i][0]), int(front_vts[i][1])), 1, (250, 0, 0), -1)
-	cv2.imshow("uv_point_scatter",img_show)
-	cv2.waitKey()
-	cv2.destroyAllWindows()
     # print("Success")
